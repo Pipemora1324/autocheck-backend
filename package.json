@@ -1,5 +1,5 @@
 {
-  "name": "backend",
+  "name": "autocheck-backend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -22,5 +22,9 @@
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.2"
+  },
+  "description": "API REST de AutoCheck-CO",
+  "engines": {
+    "node": ">=24"
   }
 }

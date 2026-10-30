@@ -10,7 +10,8 @@
     "test": "tsx --test \"test/**/*.test.ts\"",
     "migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
     "migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
-    "migrate:prod": "node dist/db/migrate.js up"
+    "migrate:prod": "node dist/db/migrate.js up",
+    "prebuild": "node -e \"require(\\\"node:fs\\\").rmSync(\\\"dist\\\",{recursive:true,force:true})\""
   },
   "dependencies": {
     "argon2": "0.45.1",

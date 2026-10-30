@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: autocheck-backend
+    runtime: node
+    plan: free
+    # Elige la región más cercana a la de tu proyecto de Neon (ver DEPLOY.md).
+    region: virginia
+    branch: main
+    autoDeploy: true
+    # NODE_ENV=production omite devDependencies; TypeScript las necesita para compilar.
+    buildCommand: npm ci --include=dev && npm run build
+    # Las migraciones corren antes de levantar el servidor; si fallan, el deploy no arranca.
+    startCommand: npm run migrate:prod && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false

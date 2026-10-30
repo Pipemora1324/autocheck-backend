@@ -4,14 +4,20 @@
 # Uso:
 #   scripts/check-secrets.sh                 # revisa el arbol de HEAD + el indice
 #   scripts/check-secrets.sh <rango>         # revisa los commits de un rango (ej. origin/main..HEAD)
-#   Como hook pre-push: lee las refs a subir desde stdin (lo hace git automaticamente).
+#   scripts/check-secrets.sh --pre-push      # modo hook: lee las refs a subir desde stdin
 #
-# Instalar el hook (local, no se versiona):
-#   ln -sf ../../scripts/check-secrets.sh .git/hooks/pre-push
+# Instalar el hook (local, no se versiona), creando .git/hooks/pre-push con:
+#   #!/bin/sh
+#   exec "$(git rev-parse --show-toplevel)/scripts/check-secrets.sh" --pre-push "$@"
 #
 # Nunca imprime el valor encontrado: solo archivo, commit y tipo de secreto.
 
 set -u
+# grep con locale UTF-8 es extremadamente lento en Git for Windows
+export LC_ALL=C
+
+TMP_BLOB=$(mktemp)
+trap 'rm -f "$TMP_BLOB"' EXIT
 
 ZERO=0000000000000000000000000000000000000000
 SELF=scripts/check-secrets.sh
@@ -44,12 +50,13 @@ report() {
 check_content() {
   local where=$1 path=$2 obj=$3 entry name regex
   [ "$path" = "$SELF" ] && return
+  git cat-file blob "$obj" > "$TMP_BLOB" 2>/dev/null || return
   # Omitir binarios
-  if git cat-file -p "$obj" | grep -qI . 2>/dev/null; then :; else return; fi
+  grep -qI . "$TMP_BLOB" || return
   for entry in "${PATTERNS[@]}"; do
     name=${entry%%|*}
     regex=${entry#*|}
-    if git cat-file -p "$obj" | grep -qiE -- "$regex"; then
+    if grep -qiE -- "$regex" "$TMP_BLOB"; then
       report "$where:$path -> posible secreto ($name)"
     fi
   done
@@ -64,8 +71,12 @@ check_path() {
 
 # Revisa los archivos agregados/modificados en cada commit del rango
 scan_range() {
-  local commit path obj rest
-  for commit in $(git rev-list "$@"); do
+  local commit path obj rest commits
+  if ! commits=$(git rev-list "$@"); then
+    report "no se pudo resolver el rango: $*"
+    return
+  fi
+  for commit in $commits; do
     while IFS=$'\t' read -r rest path; do
       [ -z "$path" ] && continue
       obj=$(echo "$rest" | awk '{print $4}')
@@ -93,13 +104,9 @@ scan_tree_and_index() {
   done < <(git ls-files -s)
 }
 
-# Como hook, git pasa <nombre-remoto> <url> como argumentos
-if [ $# -ge 1 ] && ! git remote | grep -qx -- "$1"; then
-  echo "Revisando rango $1 ..." >&2
-  scan_range "$1"
-elif [ ! -t 0 ]; then
-  # Modo hook pre-push: <local ref> <local sha> <remote ref> <remote sha>
-  echo "pre-push: revisando secretos en lo que se va a subir ..." >&2
+if [ "${1:-}" = "--pre-push" ]; then
+  # git envia por stdin: <local ref> <local sha> <remote ref> <remote sha>
+  echo "pre-push: revisando secretos en lo que se va a subir a ${2:-remoto} ..." >&2
   while read -r local_ref local_sha remote_ref remote_sha; do
     [ "$local_sha" = "$ZERO" ] && continue
     if [ "$remote_sha" = "$ZERO" ]; then
@@ -109,6 +116,9 @@ elif [ ! -t 0 ]; then
       scan_range "$remote_sha..$local_sha"
     fi
   done
+elif [ $# -ge 1 ]; then
+  echo "Revisando rango $* ..." >&2
+  scan_range "$@"
 else
   echo "Revisando HEAD e indice ..." >&2
   scan_tree_and_index

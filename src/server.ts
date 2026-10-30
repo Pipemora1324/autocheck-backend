@@ -1,26 +1,56 @@
-import cors from 'cors';
-import express from 'express';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import { createVehicleRoutes } from './routes/vehicleRoutes.js';
+import { createApp } from './app.js';
+import { EnvValidationError, loadConfig } from './config/env.js';
+import { createPool } from './db/pool.js';
+import { PgPasswordResetTokenRepository, PgRefreshTokenRepository, PgUserRepository } from './repositories/pgAuthRepositories.js';
+import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
+import { AuthService } from './services/authService.js';
+import { createMailer } from './services/mailer.js';
+import { Argon2PasswordHasher } from './services/passwordHasher.js';
+import { TokenService } from './services/tokenService.js';
+import { VehicleService } from './services/vehicleService.js';
 
-const app = express();
-const port = Number(process.env.PORT ?? 3000);
+function start(): void {
+  let config;
+  try {
+    config = loadConfig();
+  } catch (error) {
+    if (error instanceof EnvValidationError) {
+      console.error(error.message);
+      process.exit(1);
+    }
+    throw error;
+  }
 
-app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') ?? true }));
-app.use(express.json({ limit: '2mb' }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(createVehicleRoutes());
+  if (config.isProduction && !config.smtp) {
+    console.warn('SMTP no configurado: la recuperación de contraseña no enviará correos hasta definir SMTP_*.');
+  }
 
-app.get('/health', (_request, response) => {
-  response.json({ status: 'ok', service: 'AutoCheck-CO' });
-});
+  const pool = createPool(config.databaseUrl);
+  const tokenService = new TokenService(config.jwtSecret, config.jwtRefreshSecret);
+  const authService = new AuthService({
+    users: new PgUserRepository(pool),
+    resetTokens: new PgPasswordResetTokenRepository(pool),
+    refreshTokens: new PgRefreshTokenRepository(pool),
+    hasher: new Argon2PasswordHasher(),
+    tokens: tokenService,
+    mailer: createMailer(config),
+    appUrl: config.appUrl
+  });
+  const vehicleService = new VehicleService(new PgVehicleRepository(pool));
 
-app.use((_request, response) => {
-  response.status(404).json({ message: 'No se encontró la ruta solicitada.' });
-});
+  const app = createApp({ config, authService, vehicleService, tokenService });
+  const server = app.listen(config.port, () => {
+    console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
+  });
 
-app.listen(port, () => {
-  console.log(`AutoCheck-CO API activa en http://localhost:${port}`);
-});
+  const shutdown = (signal: string) => {
+    console.log(`${signal} recibido, cerrando servidor...`);
+    server.close(() => {
+      pool.end().finally(() => process.exit(0));
+    });
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+start();

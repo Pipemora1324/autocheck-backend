@@ -1,40 +1,30 @@
 import type { Request, Response } from 'express';
-import { VehicleService } from '../services/vehicleService.js';
+import { currentUser } from '../middleware/auth.js';
+import type { VehicleService } from '../services/vehicleService.js';
+import { inspectionUpdateSchema, plateParamsSchema, scanSchema } from '../validation/schemas.js';
 
-const service = new VehicleService();
+export function createVehicleController(service: VehicleService) {
+  return {
+    async list(_request: Request, response: Response): Promise<void> {
+      response.json({ vehicles: await service.getVehicles() });
+    },
 
-export function getVehicleController(_request: Request, response: Response): void {
-  response.json({ vehicles: service.getVehicles() });
+    async getByPlate(request: Request, response: Response): Promise<void> {
+      const { plate } = plateParamsSchema.parse(request.params);
+      response.json(await service.getVehicle(plate));
+    },
+
+    async scan(request: Request, response: Response): Promise<void> {
+      const { plate, source } = scanSchema.parse(request.body);
+      response.status(201).json(await service.scanVehicle(plate, source));
+    },
+
+    async updateInspection(request: Request, response: Response): Promise<void> {
+      const { plate } = plateParamsSchema.parse(request.params);
+      const update = inspectionUpdateSchema.parse(request.body);
+      response.json(await service.updateInspection(plate, update, currentUser(request).id));
+    }
+  };
 }
 
-export function getVehicleByPlateController(request: Request, response: Response): void {
-  const plate = typeof request.params.plate === 'string' ? request.params.plate : '';
-  const vehicle = service.getVehicle(plate);
-  if (!vehicle) {
-    response.status(404).json({ message: 'No se encontró un vehículo con esta placa.', plate });
-    return;
-  }
-  response.json(vehicle);
-}
-
-export function scanVehicleController(request: Request, response: Response): void {
-  const plate = typeof request.body?.plate === 'string' ? request.body.plate : '';
-  const source = request.body?.source === 'image' ? 'image' : 'manual';
-  const result = service.scanVehicle(plate, source);
-  if (!result) {
-    response.status(400).json({ message: 'Ingresa una placa válida en el formato ABC-1234.', plate });
-    return;
-  }
-  response.status(201).json(result);
-}
-
-export function updateInspectionController(request: Request, response: Response): void {
-  const plate = typeof request.params.plate === 'string' ? request.params.plate : '';
-  const update = request.body;
-  const vehicle = service.updateInspection(plate, update);
-  if (!vehicle) {
-    response.status(400).json({ message: 'No se pudo actualizar la inspección. Verifica la placa y los datos enviados.' });
-    return;
-  }
-  response.json(vehicle);
-}
+export type VehicleController = ReturnType<typeof createVehicleController>;

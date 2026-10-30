@@ -2,6 +2,8 @@ export type VehicleStatus = 'Vigente' | 'Por Vencer' | 'Vencido';
 export type AlertLevel = 'verde' | 'amarillo' | 'rojo';
 export type InspectionStatus = 'Aprobado' | 'Atención' | 'No aprobado';
 
+export const INSPECTION_STATUSES = ['Aprobado', 'Atención', 'No aprobado'] as const satisfies readonly InspectionStatus[];
+
 export interface InspectionItem {
   id: string;
   category: string;
@@ -9,12 +11,15 @@ export interface InspectionItem {
   status: InspectionStatus;
   result: string;
   notes: string;
+  updatedBy: string | null;
+  updatedAt: string;
 }
 
 export interface DocumentStatus {
   number: string;
   status: VehicleStatus;
   expirationDate: string;
+  daysToExpire: number;
   alert: AlertLevel;
 }
 
@@ -53,5 +58,4 @@ export interface InspectionUpdate {
   status: InspectionStatus;
   result: string;
   notes: string;
-  updatedBy: string;
 }

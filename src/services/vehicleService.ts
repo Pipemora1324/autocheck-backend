@@ -1,57 +1,93 @@
-import { getVehicleByPlate, vehicleData } from '../data/vehicleData.js';
+import { badRequest, notFound } from '../errors/httpError.js';
 import type { InspectionUpdate, ScanResult, VehicleData, VehicleStatus } from '../interfaces/vehicle.js';
-
-const PLATE_PATTERN = /^[A-Z]{3}-\d{4}$/;
-const INSPECTION_STATUSES = new Set(['Aprobado', 'Atención', 'No aprobado']);
+import type { VehicleRecord, VehicleRepository } from '../repositories/vehicleRepository.js';
+import { documentStatus } from './documentStatus.js';
 
 export class VehicleService {
-  getVehicle(plate: string): VehicleData | undefined {
-    return getVehicleByPlate(plate);
+  constructor(
+    private readonly vehicles: VehicleRepository,
+    private readonly now: () => Date = () => new Date()
+  ) {}
+
+  async getVehicle(plate: string): Promise<VehicleData> {
+    const record = await this.vehicles.findByPlate(plate);
+    if (!record) throw notFound('No se encontró un vehículo con esta placa.', { plate });
+    return this.toVehicleData(record);
   }
 
-  getVehicles(): VehicleData[] {
-    return vehicleData;
+  async getVehicles(): Promise<VehicleData[]> {
+    const records = await this.vehicles.findAll();
+    return records.map((record) => this.toVehicleData(record));
   }
 
-  scanVehicle(plate: string, source: ScanResult['source']): ScanResult | null {
-    const normalizedPlate = plate.trim().toUpperCase();
-    if (!PLATE_PATTERN.test(normalizedPlate)) return null;
-
-    const vehicle = getVehicleByPlate(normalizedPlate);
-    if (!vehicle) return null;
-
+  async scanVehicle(plate: string, source: ScanResult['source']): Promise<ScanResult> {
+    const vehicle = await this.getVehicle(plate);
     return {
-      plate: normalizedPlate,
+      plate,
       source,
       confidence: source === 'image' ? 0.96 : 1,
-      detectedAt: new Date().toISOString(),
+      detectedAt: this.now().toISOString(),
       vehicle
     };
   }
 
-  updateInspection(plate: string, update: InspectionUpdate): VehicleData | null {
-    const normalizedPlate = plate.trim().toUpperCase();
-    const vehicle = getVehicleByPlate(normalizedPlate);
-    if (!PLATE_PATTERN.test(normalizedPlate) || !vehicle) return null;
-
-    const inspection = vehicle.inspections.find((item) => item.id === update.inspectionId);
-    if (!inspection) return null;
-    if (!INSPECTION_STATUSES.has(update.status)) return null;
-    if (typeof update.result !== 'string' || typeof update.notes !== 'string' || typeof update.updatedBy !== 'string') return null;
-    if (!update.result.trim() || !update.notes.trim() || !update.updatedBy.trim()) return null;
-
-    inspection.status = update.status;
-    inspection.result = update.result.trim();
-    inspection.notes = update.notes.trim();
-    vehicle.lastUpdated = new Date().toISOString();
-    vehicle.overallStatus = this.calculateOverallStatus(vehicle);
-    return vehicle;
+  async updateInspection(plate: string, update: InspectionUpdate, userId: string): Promise<VehicleData> {
+    const updated = await this.vehicles.updateInspection(
+      plate,
+      update.inspectionId,
+      { status: update.status, result: update.result, notes: update.notes },
+      userId
+    );
+    if (!updated) {
+      const exists = await this.vehicles.findByPlate(plate);
+      if (!exists) throw notFound('No se encontró un vehículo con esta placa.', { plate });
+      throw badRequest('La inspección indicada no existe para este vehículo.', { inspectionId: update.inspectionId });
+    }
+    return this.getVehicle(plate);
   }
 
-  private calculateOverallStatus(vehicle: VehicleData): VehicleStatus {
-    const failed = [vehicle.runt, vehicle.soat, vehicle.rtm].some((document) => document.status === 'Vencido');
-    const attention = [vehicle.runt, vehicle.soat, vehicle.rtm].some((document) => document.status === 'Por Vencer')
-      || vehicle.inspections.some((inspection) => inspection.status === 'Atención' || inspection.status === 'No aprobado');
-    return failed ? 'Vencido' : attention ? 'Por Vencer' : 'Vigente';
+  private toVehicleData(record: VehicleRecord): VehicleData {
+    const now = this.now();
+    const runt = documentStatus(record.runt.number, record.runt.expirationDate, now);
+    const soat = documentStatus(record.soat.number, record.soat.expirationDate, now);
+    const rtm = documentStatus(record.rtm.number, record.rtm.expirationDate, now);
+    const inspections = record.inspections.map((item) => ({
+      id: item.code,
+      category: item.category,
+      name: item.name,
+      status: item.status,
+      result: item.result,
+      notes: item.notes,
+      updatedBy: item.updatedByEmail,
+      updatedAt: item.updatedAt
+    }));
+
+    const documents = [runt, soat, rtm];
+    const failed = documents.some((document) => document.status === 'Vencido');
+    const attention = documents.some((document) => document.status === 'Por Vencer')
+      || inspections.some((inspection) => inspection.status === 'Atención' || inspection.status === 'No aprobado');
+    const overallStatus: VehicleStatus = failed ? 'Vencido' : attention ? 'Por Vencer' : 'Vigente';
+
+    return {
+      plate: record.plate,
+      brand: record.brand,
+      model: record.model,
+      year: record.year,
+      cylinder: record.cylinder,
+      chassis: record.chassis,
+      owner: record.ownerName,
+      ownerDocument: record.ownerDocument,
+      color: record.color,
+      fuelType: record.fuelType,
+      transmission: record.transmission,
+      mileage: record.mileage,
+      registrationDate: record.registrationDate,
+      runt,
+      soat,
+      rtm,
+      inspections,
+      overallStatus,
+      lastUpdated: record.updatedAt
+    };
   }
 }

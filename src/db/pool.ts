@@ -1,6 +1,10 @@
 import pg from 'pg';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const DATE_OID = 1082;
+
+// Las columnas DATE se devuelven como 'YYYY-MM-DD' para no desplazarlas con la zona horaria del servidor.
+pg.types.setTypeParser(DATE_OID, (value) => value);
 
 // SSL obligatorio (Neon lo exige); solo se omite para un Postgres local de desarrollo o pruebas.
 export function connectionOptions(databaseUrl: string): pg.PoolConfig {

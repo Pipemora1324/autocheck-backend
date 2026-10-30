@@ -6,12 +6,18 @@ const DATE_OID = 1082;
 // Las columnas DATE se devuelven como 'YYYY-MM-DD' para no desplazarlas con la zona horaria del servidor.
 pg.types.setTypeParser(DATE_OID, (value) => value);
 
-// SSL obligatorio (Neon lo exige); solo se omite para un Postgres local de desarrollo o pruebas.
+// SSL obligatorio con verificación del certificado (Neon lo exige); solo se omite para un Postgres local.
+// sslmode/channel_binding se quitan de la URL para que esta configuración sea la única fuente de verdad.
 export function connectionOptions(databaseUrl: string): pg.PoolConfig {
-  const { hostname } = new URL(databaseUrl);
+  const url = new URL(databaseUrl);
+  if (LOCAL_HOSTS.has(url.hostname)) return { connectionString: databaseUrl, ssl: false };
+
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('channel_binding');
   return {
-    connectionString: databaseUrl,
-    ssl: LOCAL_HOSTS.has(hostname) ? false : { rejectUnauthorized: true }
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: true },
+    enableChannelBinding: true
   };
 }
 

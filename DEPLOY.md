@@ -51,7 +51,60 @@ Arquitectura: **Neon** (Postgres) ← **Render** (esta API) ← **Vercel** (fron
    curl -i https://TU-SERVICIO.onrender.com/vehicles     # 401 sin token
    ```
 
-> En el plan gratuito el servicio se duerme tras unos 15 minutos sin tráfico, y la primera petición después tarda entre 30 y 60 s. Neon también suspende la base cuando no hay uso.
+> En el plan gratuito el servicio se duerme tras unos 15 minutos sin tráfico, y la primera petición después tarda entre 30 y 60 s. Neon también suspende la base cuando no hay uso. Ver "Mantener Render despierto".
+
+### Proxies y rate limit (`TRUST_PROXY`)
+
+Camino de una petición en producción:
+
+```
+navegador → Vercel (rewrite /api/*) → balanceador de Render → Express
+             proxy 1                    proxy 2
+```
+
+- Vercel reenvía la petición con `X-Forwarded-For: <IP del cliente>`.
+- El balanceador de Render agrega la IP de salida de Vercel y se conecta a Express.
+- Express ve `X-Forwarded-For: <cliente>, <Vercel>` y como conexión directa la del balanceador.
+- `TRUST_PROXY` es la cantidad de saltos en los que se confía, contando desde la derecha:
+
+| Escenario | `TRUST_PROXY` | `req.ip` resultante |
+| --- | --- | --- |
+| Vercel → Render (recomendado; ya está en `render.yaml`) | `2` | IP real del cliente |
+| Llamadas directas a `*.onrender.com`, sin Vercel | `1` | IP real del cliente |
+| Desarrollo local | `0` (por defecto) | IP del socket |
+
+Con `1` detrás de Vercel, todos los usuarios compartirían la IP de Vercel y, por tanto, el mismo cupo de intentos de login.
+
+**Límite conocido:** con `2`, quien llame directo a `onrender.com` puede inventar el primer valor de `X-Forwarded-For` y esquivar el límite por IP. Por eso login y recuperación tienen además un **límite por correo**, que no depende de la IP.
+
+**Cómo verificarlo tras desplegar:** `morgan` registra `req.ip` en cada línea de log de Render. Haz una petición desde el navegador y compara la IP del log con la que muestra <https://ifconfig.me>. Si aparece una IP de Vercel, sube `TRUST_PROXY` en uno; si aparece una que no es la tuya, bájalo.
+
+### Cookie de refresh detrás de `/api/*`
+
+| Variable | Producción (Vercel → Render) | Desarrollo |
+| --- | --- | --- |
+| `COOKIE_PATH` | `/api/auth`, porque el navegador ve `https://<vercel>/api/auth/refresh` | `/auth` (por defecto) |
+| `COOKIE_SAMESITE` | `strict`, porque todo es mismo origen | `lax` (por defecto) |
+
+La cookie es siempre `HttpOnly` y, en producción, `Secure`.
+
+- `none` solo se acepta en producción, y solo haría falta si el frontend llamara directo a `onrender.com`; no es lo recomendado (ver `docs/COOKIES.md` del frontend).
+- Si `strict` diera problemas en algún navegador, usa `lax`: con mismo origen tiene la misma protección práctica.
+
+### Mantener Render despierto
+
+El rewrite de Vercel espera la respuesta de Render. Si Render está dormido (30–60 s para despertar), la primera petición puede agotar el tiempo del proxy. La solución más simple es un ping gratuito a `/health`, que no toca la base de datos:
+
+1. Crea una cuenta en <https://uptimerobot.com> (o <https://cron-job.org>).
+2. Agrega un monitor **HTTP(s)** a `https://TU-SERVICIO.onrender.com/health` con intervalo de **10 minutos**, menos que los 15 minutos de inactividad de Render.
+3. Opcional: activa la alerta por correo. Te sirve además como monitor de caídas.
+
+Notas:
+
+- Un servicio despierto todo el mes consume unas 730 de las 750 horas gratuitas mensuales de Render: alcanza para **un** servicio.
+- Si en algún momento quieres dejar que se duerma (por ejemplo, después de la entrega), pausa el monitor.
+- El frontend muestra "Comprobando API…" o "API sin conexión" mientras Render despierta.
+- Neon despierta en menos de un segundo con la primera consulta, así que no necesita ping.
 
 ## 3. Vercel (frontend)
 
@@ -67,11 +120,11 @@ Arquitectura: **Neon** (Postgres) ← **Render** (esta API) ← **Vercel** (fron
 
 **Contrato de autenticación para el frontend:**
 
-- `POST /auth/login` y `/auth/register` devuelven `{ user, accessToken, tokenType, expiresIn }` y dejan una cookie httpOnly `autocheck_refresh` (path `/auth`).
+- `POST /auth/login` y `/auth/register` devuelven `{ user, accessToken, tokenType, expiresIn }` y dejan una cookie httpOnly `autocheck_refresh` (path `COOKIE_PATH`).
 - Envía `Authorization: Bearer <accessToken>` en cada `/vehicles/*`.
 - El access token dura 15 minutos. Renuévalo con `POST /auth/refresh` usando `withCredentials: true`; cada llamada rota la cookie.
 - `POST /auth/logout` también con `withCredentials: true`.
-- En producción la cookie es `Secure; SameSite=None`, porque frontend y API están en dominios distintos.
+- En producción la cookie es `Secure; SameSite=Strict; Path=/api/auth`, porque el navegador solo habla con Vercel.
 
 ## 4. SMTP
 

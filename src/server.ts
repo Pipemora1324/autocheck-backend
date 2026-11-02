@@ -7,8 +7,10 @@ import {
   PgRefreshTokenRepository,
   PgUserRepository
 } from './repositories/pgAuthRepositories.js';
+import { PgGarageRepository } from './repositories/pgGarageRepository.js';
 import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
 import { AuthService } from './services/authService.js';
+import { GarageService } from './services/garageService.js';
 import { createMailer } from './services/mailer.js';
 import { Argon2PasswordHasher } from './services/passwordHasher.js';
 import { TokenService } from './services/tokenService.js';
@@ -44,8 +46,9 @@ function start(): void {
     appUrl: config.appUrl
   });
   const vehicleService = new VehicleService(new PgVehicleRepository(pool));
+  const garageService = new GarageService(new PgGarageRepository(pool));
 
-  const app = createApp({ config, authService, vehicleService, tokenService, users });
+  const app = createApp({ config, authService, vehicleService, garageService, tokenService, users });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });

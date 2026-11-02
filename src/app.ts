@@ -5,14 +5,17 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import type { AppConfig } from './config/env.js';
 import { createAuthController } from './controllers/authController.js';
+import { createGarageController } from './controllers/garageController.js';
 import { createVehicleController } from './controllers/vehicleController.js';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
 import type { UserRepository } from './repositories/authRepositories.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { createAuthRateLimits, type RateLimitOptions } from './middleware/rateLimit.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
+import { createGarageRoutes } from './routes/garageRoutes.js';
 import { createVehicleRoutes } from './routes/vehicleRoutes.js';
 import type { AuthService } from './services/authService.js';
+import type { GarageService } from './services/garageService.js';
 import type { TokenService } from './services/tokenService.js';
 import type { VehicleService } from './services/vehicleService.js';
 
@@ -20,12 +23,13 @@ export interface AppDeps {
   config: Pick<AppConfig, 'isProduction' | 'nodeEnv' | 'corsOrigins' | 'cookie' | 'trustProxy'>;
   authService: AuthService;
   vehicleService: VehicleService;
+  garageService: GarageService;
   tokenService: TokenService;
   users: UserRepository;
   rateLimits?: RateLimitOptions;
 }
 
-export function createApp({ config, authService, vehicleService, tokenService, users, rateLimits }: AppDeps): Express {
+export function createApp({ config, authService, vehicleService, garageService, tokenService, users, rateLimits }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
   const requireVerified = requireVerifiedEmail(users);
@@ -48,6 +52,7 @@ export function createApp({ config, authService, vehicleService, tokenService, u
 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));
   app.use(createVehicleRoutes(createVehicleController(vehicleService), authenticate, requireVerified));
+  app.use(createGarageRoutes(createGarageController(garageService), authenticate, requireVerified));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

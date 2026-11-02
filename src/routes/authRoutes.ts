@@ -6,10 +6,10 @@ export function createAuthRoutes(controller: AuthController, authenticate: Reque
   const router = Router();
 
   router.post('/auth/register', limits.register, controller.register);
-  router.post('/auth/login', limits.login, controller.login);
+  router.post('/auth/login', limits.login, limits.loginByEmail, controller.login);
   router.post('/auth/refresh', controller.refresh);
   router.post('/auth/logout', controller.logout);
-  router.post('/auth/forgot-password', limits.forgotPassword, controller.forgotPassword);
+  router.post('/auth/forgot-password', limits.forgotPassword, limits.forgotPasswordByEmail, controller.forgotPassword);
   router.post('/auth/reset-password', limits.resetPassword, controller.resetPassword);
   router.get('/auth/me', authenticate, controller.me);
 

@@ -6,6 +6,8 @@ import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
 import type { CardReader } from '../../src/services/cardReader.js';
 import { CardScanService } from '../../src/services/cardScanService.js';
+import { NoVehicleLookupProvider, type VehicleLookupProvider } from '../../src/providers/VehicleLookupProvider.js';
+import { RuntLookupService } from '../../src/services/runtLookupService.js';
 import { GarageService } from '../../src/services/garageService.js';
 import type { Mailer } from '../../src/services/mailer.js';
 import { Argon2PasswordHasher } from '../../src/services/passwordHasher.js';
@@ -87,6 +89,8 @@ export interface TestAppOptions {
   config?: Partial<AppDeps['config']>;
   /** null simula un servidor sin ANTHROPIC_API_KEY. */
   cardReader?: CardReader | null;
+  /** Por defecto RUNT_PROVIDER=none. */
+  lookupProvider?: VehicleLookupProvider;
 }
 
 export interface TestContext {
@@ -149,6 +153,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     vehicleService,
     garageService,
     cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
+    runtLookupService: new RuntLookupService(options.lookupProvider ?? new NoVehicleLookupProvider(), garage, garageService),
     tokenService: tokens,
     users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }

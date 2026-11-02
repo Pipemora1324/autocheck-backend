@@ -7,6 +7,7 @@ import type { AppConfig } from './config/env.js';
 import { createAuthController } from './controllers/authController.js';
 import { cardImageUpload, createCardScanController } from './controllers/cardScanController.js';
 import { createGarageController } from './controllers/garageController.js';
+import { createRuntController } from './controllers/runtController.js';
 import { createVehicleController } from './controllers/vehicleController.js';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
 import type { UserRepository } from './repositories/authRepositories.js';
@@ -18,6 +19,7 @@ import { createVehicleRoutes } from './routes/vehicleRoutes.js';
 import type { AuthService } from './services/authService.js';
 import type { CardScanService } from './services/cardScanService.js';
 import type { GarageService } from './services/garageService.js';
+import type { RuntLookupService } from './services/runtLookupService.js';
 import type { TokenService } from './services/tokenService.js';
 import type { VehicleService } from './services/vehicleService.js';
 
@@ -27,12 +29,13 @@ export interface AppDeps {
   vehicleService: VehicleService;
   garageService: GarageService;
   cardScanService: CardScanService;
+  runtLookupService: RuntLookupService;
   tokenService: TokenService;
   users: UserRepository;
   rateLimits?: RateLimitOptions;
 }
 
-export function createApp({ config, authService, vehicleService, garageService, cardScanService, tokenService, users, rateLimits }: AppDeps): Express {
+export function createApp({ config, authService, vehicleService, garageService, cardScanService, runtLookupService, tokenService, users, rateLimits }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
   const requireVerified = requireVerifiedEmail(users);
@@ -56,11 +59,17 @@ export function createApp({ config, authService, vehicleService, garageService, 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));
   app.use(createVehicleRoutes(createVehicleController(vehicleService), authenticate, requireVerified));
   const cardScan = createCardScanController(cardScanService);
+  const runt = createRuntController(runtLookupService, cardScanService);
+  const runtLimit = perUserHourlyLimiter(rateLimits?.runtLookupPerHour ?? 5, 'Alcanzaste el máximo de consultas al RUNT por hora. Intenta más tarde.');
   const scanCardLimit = perUserHourlyLimiter(rateLimits?.scanCardPerHour ?? 10, 'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.');
   app.use(
     createGarageRoutes(createGarageController(garageService), authenticate, requireVerified, {
       // El límite va antes de multer para no procesar subidas que se van a rechazar.
-      before: (router) => router.post('/garage/scan-card', scanCardLimit, cardImageUpload, cardScan.scan)
+      before: (router) => {
+        router.get('/garage/capabilities', runt.capabilities);
+        router.post('/garage/scan-card', scanCardLimit, cardImageUpload, cardScan.scan);
+      },
+      after: (router) => router.post('/garage/:plate/refresh-from-runt', runtLimit, runt.refresh)
     })
   );
 

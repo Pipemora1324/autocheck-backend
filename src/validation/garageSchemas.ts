@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { normalizePlate, PLATE_FORMAT_HINT } from '../domain/colombianPlate.js';
+import { OWNER_DOCUMENT_TYPES } from '../providers/VehicleLookupProvider.js';
 import { FUEL_TYPES, SERVICE_TYPES } from '../repositories/garageRepository.js';
 
 /** Placa colombiana ABC-123 (carro) o ABC-12D (moto); acepta minúsculas, espacios y sin guion, y la normaliza. */
@@ -79,3 +80,35 @@ export const updateGarageVehicleSchema = z
   .partial()
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, 'Envía al menos un campo para actualizar.');
+
+const DOCUMENT_ALIASES: Record<string, (typeof OWNER_DOCUMENT_TYPES)[number]> = {
+  CC: 'CC', CE: 'CE', PA: 'PA', PAS: 'PA', PASAPORTE: 'PA', NIT: 'NIT', RC: 'RC'
+};
+
+/** Acepta { type, number } o el texto que devuelve el escaneo de la tarjeta, por ejemplo "C.C. 79.123.456". */
+const ownerDocumentSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    const match = /^\s*([A-Za-z.\s]{2,12}?)[\s.:#-]*([\d.\s-]{3,25})\s*$/.exec(value);
+    if (!match) return value;
+    return { type: DOCUMENT_ALIASES[match[1]!.replace(/[.\s]/g, '').toUpperCase()] ?? match[1], number: match[2] };
+  },
+  z.object(
+    {
+      type: z.enum(OWNER_DOCUMENT_TYPES, { error: `El tipo de documento debe ser uno de: ${OWNER_DOCUMENT_TYPES.join(', ')}.` }),
+      number: z
+        .string({ error: 'El número de documento es obligatorio.' })
+        .transform((value) => value.replace(/[\s.-]/g, ''))
+        .pipe(z.string().regex(/^\d{3,15}$/, 'El número de documento solo debe tener dígitos (3 a 15).'))
+    },
+    { error: 'Indica el documento del propietario, por ejemplo { "type": "CC", "number": "79123456" }.' }
+  )
+);
+
+/** POST /garage/:plate/refresh-from-runt: el consentimiento explícito es obligatorio en cada consulta. */
+export const runtRefreshSchema = z
+  .object({
+    consent: z.literal(true, { error: 'Debes autorizar expresamente la consulta (consent: true): se enviarán la placa y el documento del propietario al proveedor.' }),
+    ownerDocument: ownerDocumentSchema
+  })
+  .strict();

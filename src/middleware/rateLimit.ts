@@ -27,6 +27,8 @@ export interface RateLimitOptions {
   resendVerificationMax?: number;
   resendVerificationEmailMax?: number;
   deleteAccountMax?: number;
+  scanCardPerHour?: number;
+  runtLookupPerHour?: number;
 }
 
 const limiter = (limit: number, message: string): RequestHandler =>
@@ -69,4 +71,18 @@ export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLi
     resendVerificationByEmail: emailLimiter(options.resendVerificationEmailMax ?? 3, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'),
     deleteAccount: limiter(options.deleteAccountMax ?? 5, 'Demasiados intentos de eliminar la cuenta. Intenta de nuevo en 15 minutos.')
   };
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Límite por usuario autenticado (no por IP) para operaciones costosas, como la lectura de tarjetas. */
+export function perUserHourlyLimiter(limit: number, message: string): RequestHandler {
+  return rateLimit({
+    windowMs: HOUR_MS,
+    limit,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { message, code: 'RATE_LIMITED' },
+    keyGenerator: (request) => `user:${request.user?.id ?? 'anonimo'}`
+  });
 }

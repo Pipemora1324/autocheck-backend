@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import multer from 'multer';
 import { ZodError } from 'zod';
 import { HttpError } from '../errors/httpError.js';
 
@@ -16,6 +17,15 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
           ? issue.keys.map((key) => ({ field: [...issue.path, key].join('.'), message: 'Este campo no está permitido.' }))
           : [{ field: issue.path.join('.'), message: issue.message }]
       )
+    });
+    return;
+  }
+
+  if (error instanceof multer.MulterError) {
+    const tooLarge = error.code === 'LIMIT_FILE_SIZE';
+    response.status(tooLarge ? 413 : 400).json({
+      message: tooLarge ? 'La imagen supera el máximo de 5 MB.' : 'Envía una sola imagen en el campo "image" (multipart/form-data).',
+      code: tooLarge ? 'IMAGE_TOO_LARGE' : 'INVALID_UPLOAD'
     });
     return;
   }

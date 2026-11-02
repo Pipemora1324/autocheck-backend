@@ -5,16 +5,18 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import type { AppConfig } from './config/env.js';
 import { createAuthController } from './controllers/authController.js';
+import { cardImageUpload, createCardScanController } from './controllers/cardScanController.js';
 import { createGarageController } from './controllers/garageController.js';
 import { createVehicleController } from './controllers/vehicleController.js';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
 import type { UserRepository } from './repositories/authRepositories.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-import { createAuthRateLimits, type RateLimitOptions } from './middleware/rateLimit.js';
+import { createAuthRateLimits, perUserHourlyLimiter, type RateLimitOptions } from './middleware/rateLimit.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
 import { createGarageRoutes } from './routes/garageRoutes.js';
 import { createVehicleRoutes } from './routes/vehicleRoutes.js';
 import type { AuthService } from './services/authService.js';
+import type { CardScanService } from './services/cardScanService.js';
 import type { GarageService } from './services/garageService.js';
 import type { TokenService } from './services/tokenService.js';
 import type { VehicleService } from './services/vehicleService.js';
@@ -24,12 +26,13 @@ export interface AppDeps {
   authService: AuthService;
   vehicleService: VehicleService;
   garageService: GarageService;
+  cardScanService: CardScanService;
   tokenService: TokenService;
   users: UserRepository;
   rateLimits?: RateLimitOptions;
 }
 
-export function createApp({ config, authService, vehicleService, garageService, tokenService, users, rateLimits }: AppDeps): Express {
+export function createApp({ config, authService, vehicleService, garageService, cardScanService, tokenService, users, rateLimits }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
   const requireVerified = requireVerifiedEmail(users);
@@ -52,7 +55,14 @@ export function createApp({ config, authService, vehicleService, garageService, 
 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));
   app.use(createVehicleRoutes(createVehicleController(vehicleService), authenticate, requireVerified));
-  app.use(createGarageRoutes(createGarageController(garageService), authenticate, requireVerified));
+  const cardScan = createCardScanController(cardScanService);
+  const scanCardLimit = perUserHourlyLimiter(rateLimits?.scanCardPerHour ?? 10, 'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.');
+  app.use(
+    createGarageRoutes(createGarageController(garageService), authenticate, requireVerified, {
+      // El límite va antes de multer para no procesar subidas que se van a rechazar.
+      before: (router) => router.post('/garage/scan-card', scanCardLimit, cardImageUpload, cardScan.scan)
+    })
+  );
 
   app.use(notFoundHandler);
   app.use(errorHandler);

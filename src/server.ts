@@ -10,6 +10,8 @@ import {
 import { PgGarageRepository } from './repositories/pgGarageRepository.js';
 import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
 import { AuthService } from './services/authService.js';
+import { createCardReader } from './services/cardReader.js';
+import { CardScanService } from './services/cardScanService.js';
 import { GarageService } from './services/garageService.js';
 import { createMailer } from './services/mailer.js';
 import { Argon2PasswordHasher } from './services/passwordHasher.js';
@@ -47,8 +49,10 @@ function start(): void {
   });
   const vehicleService = new VehicleService(new PgVehicleRepository(pool));
   const garageService = new GarageService(new PgGarageRepository(pool));
+  const cardScanService = new CardScanService(createCardReader(config.anthropic));
+  if (!cardScanService.enabled) console.warn('ANTHROPIC_API_KEY no configurada: POST /garage/scan-card responderá 503.');
 
-  const app = createApp({ config, authService, vehicleService, garageService, tokenService, users });
+  const app = createApp({ config, authService, vehicleService, garageService, cardScanService, tokenService, users });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });

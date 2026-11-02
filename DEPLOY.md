@@ -2,22 +2,20 @@
 
 ```
 navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render (esta API) ──► Neon (Postgres)
-                                                              ├─► Anthropic (lectura de tarjeta, opcional)
-                                                              ├─► SMTP (correos)
+                                                              ├─► Brevo (correo por HTTPS)
+                                                              ├─► Gemini o Anthropic (lectura de tarjeta, opcional)
                                                               └─► Verifik (RUNT, opcional, sin implementar)
 ```
 
 ## Pendientes manuales (TODO)
 
-- [ ] **Render:** crear el servicio desde `render.yaml` y cargar las variables `sync: false` (paso 2).
-- [ ] **SMTP:** cargar `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` y `MAIL_FROM` (paso 4). **Sin SMTP los usuarios no reciben el enlace de verificación y no pueden usar el garaje** (ver la salida temporal del paso 5).
-- [ ] **TODO clave Anthropic:** crear una clave en <https://console.anthropic.com> y cargarla en `ANTHROPIC_API_KEY` de Render (paso 6). Sin ella, `POST /garage/scan-card` responde 503.
-- [ ] **TODO Verifik:** pedir a Verifik la especificación vigente del endpoint RUNT y una clave (`VERIFIK_API_KEY`). El adaptador es un esqueleto (paso 7).
-- [ ] **Ping de salud:** configurar UptimeRobot o cron-job.org contra `/health` (paso 2.5).
-- [ ] **Primer administrador:** paso 5.
-- [ ] **Responsable del tratamiento de datos (Ley 1581):** completar nombre, correo de contacto y canal de solicitudes en la sección "Tratamiento de datos personales" del README.
-- [ ] **Frontend:** agregar las pantallas que ya soporta la API (paso 3).
-- [ ] **Rotación:** si se expone una clave, rotarla en el proveedor (paso 8).
+- [ ] **Render:** crear el servicio desde `render.yaml` y cargar las variables marcadas "cargar" (paso 2).
+- [ ] **Brevo:** crear la cuenta, verificar el remitente y crear la clave de API (paso 4). Sin correo, nadie recibe el enlace de verificación.
+- [ ] **Gemini (opcional):** crear la clave en Google AI Studio y cargarla en `GEMINI_API_KEY` (paso 6). Sin ella, `POST /garage/scan-card` responde 503.
+- [ ] **Administrador:** poner tu correo en `ADMIN_EMAILS` (paso 5).
+- [ ] **Ping de salud:** UptimeRobot o cron-job.org contra `/health` cada 10 minutos (paso 2.5).
+- [ ] **Responsable del tratamiento:** confirmar los datos de contacto en la sección "Tratamiento de datos personales" del README.
+- [ ] **Verifik (opcional):** pedir el contrato vigente y una clave (paso 7).
 
 ## 1. Neon (Postgres)
 
@@ -28,7 +26,7 @@ navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render 
    ```bash
    cp .env.example .env      # pega la cadena en DATABASE_URL
    npm ci
-   npm run migrate           # tablas, verificación de correo, consentimiento, garaje y datos de demostración
+   npm run migrate
    ```
 
    Para revertir la última: `npm run migrate:down`.
@@ -36,65 +34,79 @@ navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render 
 | Migración | Qué crea |
 | --- | --- |
 | `1761800000000_create-auth-tables` | `users`, `password_reset_tokens`, `refresh_tokens` |
-| `1761800100000_create-vehicle-tables` | `vehicles`, `inspections` (demostración) |
-| `1761800200000_seed-demo-vehicles` | 3 placas ficticias |
+| `1761800100000_create-vehicle-tables` | `vehicles`, `inspections` (**demostración**) |
+| `1761800200000_seed-demo-vehicles` | 3 placas ficticias (**demostración**) |
 | `1762100000000_add-email-verification` | `users.email_verified_at`, `email_verification_tokens` |
 | `1762100100000_add-terms-consent` | `users.terms_accepted_at`, `users.terms_version` |
-| `1762100200000_create-user-vehicles` | `user_vehicles` (garaje) |
+| `1762100200000_create-user-vehicles` | `user_vehicles` (garaje real) |
 
-La conexión exige TLS con verificación del certificado. `sslmode` y `channel_binding` de la URL se ignoran, porque el código ya los fuerza (ver `src/db/pool.ts`).
+La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
 
 ## 2. Render (API)
 
-1. En <https://dashboard.render.com>, ve a **New → Blueprint** y elige el repo `autocheck-backend`. Render lee `render.yaml`:
-   - **Build:** `npm ci --include=dev && npm run build`
-   - **Start:** `npm run migrate:prod && npm start`. Si las migraciones fallan, el servicio no arranca.
-   - **Health check:** `GET /health`
-   - **Secretos JWT:** `JWT_SECRET` y `JWT_REFRESH_SECRET` los genera Render.
-2. Variables:
+1. En <https://dashboard.render.com>, ve a **New → Blueprint** y elige el repo `autocheck-backend`. `render.yaml` define el build, el start (que corre las migraciones antes), el health check en `/health` y **solo** las variables de la configuración recomendada.
+2. Variables. "Fija" ya viene con valor en `render.yaml`; "cargar" la escribes tú; "auto" la genera Render.
 
-   | Variable | Valor | En `render.yaml` |
+   **Obligatorias en producción** (sin ellas el servicio no arranca y el log nombra cada una):
+
+   | Variable | Valor | En Render |
    | --- | --- | --- |
    | `NODE_ENV` | `production` | fija |
    | `NODE_VERSION` | `24` | fija |
-   | `DATABASE_URL` | Cadena directa de Neon | **cargar** |
-   | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Generadas por Render | automática |
-   | `CORS_ORIGIN` | URL de Vercel, p. ej. `https://autocheck-frontend.vercel.app` (sin `/` final; varias separadas por coma) | **cargar** |
-   | `APP_URL` | Misma URL de Vercel; los correos enlazan a `APP_URL/verify-email` y `APP_URL/reset-password` | **cargar** |
-   | `COOKIE_PATH` | `/api/auth` | fija |
-   | `COOKIE_SAMESITE` | `strict` (o `lax` si `strict` diera problemas) | fija |
-   | `TRUST_PROXY` | `2` (Vercel + Render) | fija |
-   | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Paso 4 | **cargar** |
-   | `SMTP_PORT` | `587` | fija |
-   | `ANTHROPIC_API_KEY` | TODO, paso 6 (vacía = lectura de tarjeta apagada) | **cargar** |
-   | `ANTHROPIC_MODEL` | `claude-opus-5-5` | fija |
-   | `RUNT_PROVIDER` | `none` (paso 7) | fija |
-   | `VERIFIK_API_KEY` | TODO, paso 7 (solo con `RUNT_PROVIDER=verifik`) | **cargar** |
+   | `DATABASE_URL` | Cadena directa de Neon (paso 1.2) | **cargar** |
+   | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Secretos aleatorios | auto |
+   | `CORS_ORIGIN` | URL de Vercel, p. ej. `https://autocheck-frontend.vercel.app` (sin `/` final) | **cargar** |
+   | `APP_URL` | La misma URL de Vercel; los correos enlazan a `APP_URL/verify-email` y `APP_URL/reset-password` | **cargar** |
+   | `EMAIL_PROVIDER` | `brevo` | fija |
+   | `BREVO_API_KEY` | Clave de la API de Brevo (paso 4) | **cargar** |
+   | `MAIL_FROM` | Solo el correo remitente verificado en Brevo, p. ej. `no-reply@tu-dominio.com` | **cargar** |
 
-3. Si falta o es inválida alguna variable, el arranque falla con un mensaje que nombra cada una (revisa los **Logs**).
-4. Verifica (la URL actual del servicio es `https://autocheck-backend-d2k2.onrender.com`):
+   **Con valor recomendado** (ya fijas en `render.yaml`; si faltan, se usan los valores por defecto indicados):
+
+   | Variable | Valor en `render.yaml` | Por defecto en producción |
+   | --- | --- | --- |
+   | `MAIL_FROM_NAME` | `AutoCheck-CO` | `AutoCheck-CO` |
+   | `COOKIE_PATH` | `/api/auth` | `/auth` (no sirve detrás de Vercel) |
+   | `COOKIE_SAMESITE` | `strict` | `strict` |
+   | `TRUST_PROXY` | `2` | `1` |
+   | `SCAN_PROVIDER` | `gemini` | `none` |
+   | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` |
+   | `RUNT_PROVIDER` | `none` | `none` |
+
+   **Opcionales** (pueden quedar vacías; el servicio arranca igual):
+
+   | Variable | Para qué | Si queda vacía |
+   | --- | --- | --- |
+   | `ADMIN_EMAILS` | Correos que reciben rol admin al verificar (paso 5) | Nadie es admin automáticamente |
+   | `GEMINI_API_KEY` | Lectura de tarjeta con Gemini (paso 6) | `scan-card` responde 503 |
+   | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Solo si cambias a `SCAN_PROVIDER=anthropic` (no están en `render.yaml`) | — |
+   | `VERIFIK_API_KEY` | Solo si cambias a `RUNT_PROVIDER=verifik` (no está en `render.yaml`) | — |
+
+   No hacen falta `SMTP_*`: Render gratuito bloquea los puertos SMTP 25/465/587, por eso el correo va por la API HTTPS de Brevo.
+3. Verifica (la URL actual del servicio es `https://autocheck-backend-d2k2.onrender.com`):
 
    ```bash
-   curl https://autocheck-backend-d2k2.onrender.com/health   # {"status":"ok",...}
-   curl -i https://autocheck-backend-d2k2.onrender.com/garage   # 401 sin token
+   curl https://autocheck-backend-d2k2.onrender.com/health          # {"status":"ok",...}
+   curl https://autocheck-backend-d2k2.onrender.com/config/public   # proveedor de lectura activo y textos de privacidad
    ```
+
+   En los logs del arranque deben aparecer "Correo: proveedor brevo." y "Lectura de tarjeta: gemini (...)" (o el aviso de que falta la clave).
 
 ### 2.5 Mantener Render despierto
 
 En el plan gratuito, Render se duerme a los ~15 minutos sin tráfico y tarda 30–60 s en despertar, lo que puede agotar el tiempo del rewrite de Vercel.
 
 1. En <https://uptimerobot.com> (o <https://cron-job.org>), crea un monitor **HTTP(s)** a `https://autocheck-backend-d2k2.onrender.com/health` cada **10 minutos**.
-2. Opcional: activa la alerta por correo, que de paso sirve como monitor de caídas.
+2. Opcional: activa la alerta por correo.
 
 Notas:
 
-- Un servicio despierto todo el mes usa unas 730 de las 750 horas gratuitas de Render: alcanza para **uno**.
-- `/health` no consulta la base, y Neon despierta solo en menos de un segundo.
-- Pausa el monitor cuando no lo necesites.
+- Un servicio despierto todo el mes usa unas 730 de las 750 horas gratuitas de Render.
+- `/health` no toca la base.
 
 ### Proxies y rate limit (`TRUST_PROXY`)
 
-Camino de una petición: `navegador → Vercel (proxy 1) → balanceador de Render (proxy 2) → Express`. Express recibe `X-Forwarded-For: <cliente>, <IP de Vercel>`, y `TRUST_PROXY` es la cantidad de saltos en los que confía, contando desde la derecha.
+Camino de una petición: `navegador → Vercel (proxy 1) → balanceador de Render (proxy 2) → Express`. Express recibe `X-Forwarded-For: <cliente>, <IP de Vercel>`, y `TRUST_PROXY` es la cantidad de saltos en los que confía.
 
 | Escenario | `TRUST_PROXY` | `req.ip` |
 | --- | --- | --- |
@@ -102,100 +114,102 @@ Camino de una petición: `navegador → Vercel (proxy 1) → balanceador de Rend
 | Directo a `*.onrender.com` | `1` | IP real del cliente |
 | Desarrollo local | `0` | IP del socket |
 
-- **Riesgo con `1` detrás de Vercel:** todos los usuarios compartirían el cupo de intentos.
-- **Riesgo con `2`:** quien llame directo a `onrender.com` puede falsificar el primer valor de `X-Forwarded-For`. Por eso login, recuperación y reenvío de verificación tienen además un **límite por correo**, y la lectura de tarjetas y la consulta RUNT limitan **por usuario**.
-- **Cómo verificarlo:** `morgan` registra `req.ip` en cada línea de log. Compara la IP de tu petición con <https://ifconfig.me>. Si aparece una IP de Vercel, sube el valor en uno; si aparece una IP que no es la tuya, bájalo.
+- **Riesgo con `2`:** quien llame directo a `onrender.com` puede falsificar el primer valor de `X-Forwarded-For`. Por eso login, recuperación y reenvío de verificación limitan además por correo, y la lectura de tarjetas y la consulta RUNT limitan por usuario.
+- **Cómo verificarlo:** `morgan` registra `req.ip` en cada línea de log. Compárala con <https://ifconfig.me>.
 
 ### Cookie de refresh detrás de `/api/*`
 
-- **Ruta:** el navegador ve `https://<vercel>/api/auth/refresh`, así que la cookie debe tener `Path=/api/auth` (`COOKIE_PATH`).
-- **SameSite:** todo es mismo origen, por eso `strict` basta.
-- **Flags fijos:** la cookie es siempre `HttpOnly`, y `Secure` en producción.
-- **`none`:** solo se acepta en producción y solo haría falta llamando directo a Render, que no es lo recomendado (ver `docs/COOKIES.md` del frontend).
+- **Ruta:** el navegador ve `https://<vercel>/api/auth/refresh`, así que la cookie usa `Path=/api/auth` (`COOKIE_PATH`) y `SameSite=Strict`.
+- **Flags fijos:** siempre `HttpOnly`, y `Secure` en producción.
 
 ## 3. Vercel (frontend)
 
 1. Importa `autocheck-frontend`. Su `vercel.json` ya define el build, la salida `dist/frontend/browser`, el rewrite `/api/:path*` → `https://autocheck-backend-d2k2.onrender.com/:path*` y el fallback a `index.html`.
 2. Copia la URL final de Vercel en `CORS_ORIGIN` y `APP_URL` de Render y redespliega la API.
-3. Orden de despliegue: **primero la API** con `COOKIE_PATH=/api/auth`, después el frontend.
-4. Pantallas que el frontend todavía necesita para usar lo nuevo (contrato en `docs/API.md`):
-   - `/verify-email?token=...` y un aviso "confirma tu correo" ante `403 EMAIL_NOT_VERIFIED`, con botón de reenvío.
-   - Casilla obligatoria de aceptación de la política de datos en el registro (`acceptedTerms: true`).
-   - Garaje: lista, alta, edición, borrado, vigencias y concepto con su `disclaimer`.
-   - Lectura de tarjeta: subir la foto, revisar los datos precargados y confirmar con `POST /garage`.
-   - "Eliminar mi cuenta" con confirmación de contraseña (`DELETE /auth/me`).
-   - Mostrar u ocultar botones según `GET /garage/capabilities`.
+3. Orden: **primero la API**, después el frontend.
+4. El frontend debe mostrar los textos de `GET /config/public`:
+   - `privacyPolicy.registrationConsent` junto a la casilla del registro.
+   - `cardScan.notice` antes de subir la foto.
 
-## 4. SMTP
+## 4. Correo con Brevo (API HTTPS)
 
-Sirve cualquier proveedor SMTP (Brevo, Mailgun, SendGrid, Amazon SES, Gmail con contraseña de aplicación).
+1. Crea una cuenta gratuita en <https://www.brevo.com>.
+2. **Senders, Domains & Dedicated IPs → Senders:** agrega y verifica el remitente (por ejemplo `no-reply@tu-dominio.com`). Si tienes dominio, autentícalo (DKIM/DMARC) para que los correos no caigan en spam.
+3. **SMTP & API → API keys:** crea una clave. TODO: cárgala en `BREVO_API_KEY` de Render; nunca en el repo.
+4. En Render: `MAIL_FROM` = ese correo remitente (solo el correo), y `MAIL_FROM_NAME` = el nombre que verá el usuario (por defecto `AutoCheck-CO`).
 
-| Variable | Ejemplo |
+Contrato usado (documentación oficial de Brevo): `POST https://api.brevo.com/v3/smtp/email`, cabecera `api-key`, cuerpo `{ sender, to, subject, htmlContent, textContent }`, respuesta `201`.
+
+Comportamiento ante errores:
+
+- **Si Brevo responde error o no responde,** el registro y la recuperación siguen respondiendo normal al usuario, sin detalles.
+- **En el log** queda solo `Brevo respondió <código>.`, sin tokens, enlaces ni la clave.
+
+| `EMAIL_PROVIDER` | Uso |
 | --- | --- |
-| `SMTP_HOST` | `smtp-relay.brevo.com` |
-| `SMTP_PORT` | `587` (STARTTLS) o `465` (TLS directo) |
-| `SMTP_USER` | Usuario del proveedor |
-| `SMTP_PASS` | TODO: clave SMTP del proveedor; va solo en Render |
-| `MAIL_FROM` | `AutoCheck-CO <no-reply@tu-dominio.com>` (remitente verificado en el proveedor) |
+| `brevo` | Producción (por defecto cuando `NODE_ENV=production`). Exige `BREVO_API_KEY` y `MAIL_FROM` |
+| `smtp` | Solo fuera de Render gratuito. Exige `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` y `MAIL_FROM` |
+| `console` | Desarrollo (por defecto). Imprime los enlaces en la consola. Rechazado en producción |
 
-Hay que definir las cuatro variables o ninguna. Sin SMTP:
+## 5. Administrador sin SQL (`ADMIN_EMAILS`)
 
-- **Desarrollo:** los enlaces de verificación y recuperación se imprimen en la consola.
-- **Producción:** no se envía nada y se registra una advertencia; los enlaces nunca se imprimen.
+1. En Render, carga `ADMIN_EMAILS` con tu correo (varios separados por coma), por ejemplo `juan.morarevel@campusucc.edu.co`.
+2. Regístrate en la app con ese correo y confírmalo con el enlace que llega por Brevo.
+3. Al verificar el correo (o al iniciar sesión, si ya estaba verificado) la cuenta pasa a `admin`. **Nunca antes de verificar:** así nadie obtiene el rol registrándose con un correo ajeno.
 
-## 5. Primer administrador y verificación manual
+Notas:
 
-Todas las cuentas se registran como `user` y sin verificar. En el **SQL Editor** de Neon:
+- El rol viaja en el access token; la app lo refleja en el siguiente refresh o login.
+- Quitar un correo de la lista **no** revoca el rol. Para eso: `UPDATE users SET role = 'user' WHERE email = '...';` en el SQL Editor de Neon.
 
-```sql
--- Promover a admin (necesario para PATCH /vehicles/:plate/inspections)
-UPDATE users SET role = 'admin' WHERE email = 'tu-correo@dominio.com';
+## 6. Lectura de la tarjeta (`SCAN_PROVIDER`)
 
--- Solo mientras no haya SMTP: marcar un correo como verificado a mano
-UPDATE users SET email_verified_at = now() WHERE email = 'tu-correo@dominio.com';
-```
+| `SCAN_PROVIDER` | Proveedor | Variables |
+| --- | --- | --- |
+| `gemini` (recomendado, gratis) | Gemini API de Google AI Studio | `GEMINI_API_KEY`, `GEMINI_MODEL` (por defecto `gemini-3.5-flash-lite`) |
+| `anthropic` | API de Claude (de pago) | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (por defecto `claude-sonnet-5-5`) |
+| `none` | Apagado | — |
 
-- El rol viaja en el access token, así que el cambio se aplica en el siguiente login o refresh.
-- La verificación se lee de la base en cada petición, así que se aplica de inmediato.
+**Gemini:**
 
-## 6. Lectura de la tarjeta con visión (Anthropic)
+1. TODO: crea la clave en <https://aistudio.google.com/apikey> y cárgala en `GEMINI_API_KEY` de Render.
+2. Verifica con `GET /config/public` que aparezca `"cardScan": { "enabled": true, "provider": "gemini", ... }`.
 
-1. TODO: crea una clave en <https://console.anthropic.com> (**Settings → API keys**) y define un límite de gasto mensual en **Billing**.
-2. En Render, carga `ANTHROPIC_API_KEY`. `ANTHROPIC_MODEL` ya viene en `claude-opus-5-5`; puedes cambiarlo sin tocar código.
-3. Verifica con `GET /garage/capabilities` → `"cardScan": { "enabled": true }`.
+Detalles del proveedor:
 
-Comportamiento:
+- **Contrato:** Interactions API (`POST https://generativelanguage.googleapis.com/v1beta/interactions`, cabecera `x-goog-api-key`), imagen en base64 y respuesta JSON con esquema. Tomado de la documentación oficial de Google AI Studio el 2026-11-02.
+- **Modelo:** `gemini-3.5-flash-lite` está en el plan gratuito y su página de precios lista entrada de imágenes. Si la lectura es mala, puedes subir a otro modelo con `GEMINI_MODEL` (por ejemplo `gemini-3.8-flash`); revisa antes en la página de precios que acepte imágenes en tu plan.
+- **Privacidad:** en el plan gratuito, Google puede usar lo enviado para mejorar sus productos. Esto está declarado en el consentimiento del registro y en `cardScan.notice`.
+- **Saturación:** si el plan gratuito se satura (HTTP 429), la API responde `503 SCAN_PROVIDER_BUSY`: "El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano."
 
-- **Rechazos:** usa salida estructurada validada con zod y fallback del servidor ante rechazos del modelo (`server-side-fallback-2026-07-01`).
-- **Límites de la subida:** 10 lecturas por hora por usuario e imágenes de máximo 5 MB.
-- **Privacidad:** la imagen se procesa en memoria y no se guarda. Los datos extraídos no se registran en logs.
-- **Aviso al usuario:** la imagen se envía a Anthropic (EE. UU.). Está declarado en la sección de tratamiento de datos del README; muéstralo también al usuario antes de subir la foto.
+**Anthropic** (si algún día lo prefieres):
 
-## 7. Consulta RUNT por proveedor (desactivada por defecto)
+- **Configuración:** `SCAN_PROVIDER=anthropic` y `ANTHROPIC_API_KEY`.
+- **Modelo:** `claude-sonnet-5-5` basta para extraer datos de una foto. Si la lectura es mala, sube a `ANTHROPIC_MODEL=claude-opus-5-5`, que es más capaz y más costoso.
 
-No se hace scraping de RUNT ni de ningún sitio oficial: solo se admiten APIs de proveedores con contrato.
+**Protecciones comunes:**
 
-- **`RUNT_PROVIDER=none` (por defecto):** `POST /garage/:plate/refresh-from-runt` responde 503 y la app trabaja con el garaje manual.
-- **`RUNT_PROVIDER=verifik`:** exige `VERIFIK_API_KEY`. **El adaptador es un esqueleto** y responde `501 RUNT_PROVIDER_NOT_IMPLEMENTED`. La documentación pública de Verifik revisada el 2026-11-02 es inconsistente:
-  - Muestra dos formatos de respuesta distintos para el mismo `GET /v2/co/runt/vehiculo`.
-  - La autenticación aparece como `Bearer` en la referencia y como `jwt` en los ejemplos.
-  - El endpoint con SOAT/RTM (`/v2/co/runt/vehicle-by-plate`) no tiene la respuesta documentada.
+- La imagen se procesa en memoria y no se guarda ni se registra.
+- El tipo se valida por la firma del archivo.
+- Máximo 5 MB y 10 lecturas por hora por usuario.
+- La respuesta solo precarga datos: el usuario los confirma con `POST /garage`.
 
-  El detalle está en el TODO de `src/providers/verifikProvider.ts`.
+## 7. Consulta RUNT por proveedor (desactivada)
+
+No se hace scraping de RUNT ni de ningún sitio oficial.
+
+- **`RUNT_PROVIDER=none` (por defecto):** `POST /garage/:plate/refresh-from-runt` responde 503 y la app usa el garaje manual.
+- **`RUNT_PROVIDER=verifik`:** exige `VERIFIK_API_KEY`. El adaptador es un **esqueleto** y responde 501, porque la documentación pública de Verifik es inconsistente. El detalle está en `src/providers/verifikProvider.ts`.
 
 Para activarlo:
 
-1. TODO: contrata Verifik y pide la especificación vigente del endpoint de vehículo con SOAT y RTM (colección Postman u OpenAPI) y una clave.
-2. Implementa `lookupByPlate` en `src/providers/verifikProvider.ts` siguiendo ese contrato. Las pruebas de `test/runtLookup.test.ts` muestran el comportamiento esperado.
-3. En Render: `RUNT_PROVIDER=verifik` y `VERIFIK_API_KEY=<clave>`.
-4. Verifica `GET /garage/capabilities` → `"runtLookup": { "enabled": true, "provider": "verifik" }` y haz una consulta con un vehículo propio.
-
-Cada consulta exige `consent: true` en el cuerpo y el documento del propietario, que se envía al proveedor y no se guarda.
+1. Pide a Verifik el contrato vigente y una clave.
+2. Implementa `lookupByPlate`, usando como guía `test/runtLookup.test.ts`.
+3. Agrega en Render `RUNT_PROVIDER=verifik` y `VERIFIK_API_KEY`.
 
 ## 8. Secretos y rotación
 
 - `.env` está en `.gitignore`. El hook `pre-push` (`scripts/check-secrets.sh`) bloquea los pushes que contengan `.env` o patrones de claves.
-- **JWT:** en Render (**Environment**), genera valores nuevos para `JWT_SECRET` y `JWT_REFRESH_SECRET` y redespliega. Se cierran todas las sesiones.
-- **Base de datos:** en Neon (**Roles → Reset password**), resetea la contraseña y actualiza `DATABASE_URL` en Render y en tu `.env`.
-- **Anthropic, SMTP o Verifik:** revoca la clave en el proveedor, crea una nueva y actualízala en Render.
-- **Secreto local nuevo:** `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"`.
+- **JWT:** genera valores nuevos en Render (**Environment**) y redespliega. Se cierran todas las sesiones.
+- **Neon:** en **Roles → Reset password**, resetea la contraseña y actualiza `DATABASE_URL`.
+- **Brevo, Gemini, Anthropic o Verifik:** revoca la clave en el proveedor, crea una nueva y actualízala en Render.

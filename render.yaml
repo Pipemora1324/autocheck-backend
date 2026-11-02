@@ -27,6 +27,14 @@ services:
         sync: false
       - key: APP_URL
         sync: false
+      # El frontend llama a /api/* en Vercel, que reenvía a Render: el navegador ve /api/auth/...
+      - key: COOKIE_PATH
+        value: /api/auth
+      - key: COOKIE_SAMESITE
+        value: strict
+      # Vercel (rewrite) + balanceador de Render = 2 proxies delante de Express. Ver DEPLOY.md.
+      - key: TRUST_PROXY
+        value: "2"
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

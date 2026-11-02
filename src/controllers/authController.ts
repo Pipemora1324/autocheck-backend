@@ -1,4 +1,5 @@
 import type { CookieOptions, Request, Response } from 'express';
+import type { CookieConfig } from '../config/env.js';
 import { currentUser } from '../middleware/auth.js';
 import type { AuthService, Session } from '../services/authService.js';
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from '../validation/schemas.js';
@@ -6,13 +7,14 @@ import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema 
 export const REFRESH_COOKIE = 'autocheck_refresh';
 export const FORGOT_PASSWORD_MESSAGE = 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';
 
-export function createAuthController(service: AuthService, options: { secureCookies: boolean }) {
-  // En producción frontend (Vercel) y API (Render) están en dominios distintos: la cookie debe ser SameSite=None + Secure.
+export function createAuthController(service: AuthService, cookie: CookieConfig) {
+  // Detrás del rewrite de Vercel (/api/* → Render) el navegador ve /api/auth/...: la ruta de la cookie
+  // debe coincidir con esa URL (COOKIE_PATH=/api/auth) y, al ser mismo origen, basta SameSite=Strict.
   const cookieOptions: CookieOptions = {
     httpOnly: true,
-    secure: options.secureCookies,
-    sameSite: options.secureCookies ? 'none' : 'lax',
-    path: '/auth'
+    secure: cookie.secure,
+    sameSite: cookie.sameSite,
+    path: cookie.path
   };
 
   const sendSession = (response: Response, session: Session, status = 200) => {

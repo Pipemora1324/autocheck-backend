@@ -45,3 +45,13 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      # Lectura de la tarjeta con visión. Vacía = /garage/scan-card responde 503.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-opus-5-5
+      # Consulta RUNT: none (solo garaje manual) o verifik (requiere VERIFIK_API_KEY).
+      - key: RUNT_PROVIDER
+        value: none
+      - key: VERIFIK_API_KEY
+        sync: false

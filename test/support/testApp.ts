@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { createApp } from '../../src/app.js';
+import { createApp, type AppDeps } from '../../src/app.js';
 import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
 import type { Mailer } from '../../src/services/mailer.js';
@@ -42,6 +42,28 @@ export interface TestResponse {
   cookie: string | undefined;
 }
 
+export interface RequestOptions {
+  body?: unknown;
+  rawBody?: string;
+  token?: string;
+  cookie?: string;
+  headers?: Record<string, string>;
+}
+
+export const NO_RATE_LIMITS: RateLimitOptions = {
+  registerMax: 1000,
+  loginMax: 1000,
+  loginEmailMax: 1000,
+  forgotPasswordMax: 1000,
+  forgotPasswordEmailMax: 1000,
+  resetPasswordMax: 1000
+};
+
+export interface TestAppOptions {
+  rateLimits?: RateLimitOptions;
+  config?: Partial<AppDeps['config']>;
+}
+
 export interface TestContext {
   users: MemoryUserRepository;
   resetTokens: MemoryPasswordResetTokenRepository;
@@ -49,13 +71,13 @@ export interface TestContext {
   mailer: CapturingMailer;
   tokens: TokenService;
   clock: { now: Date };
-  request(method: string, path: string, options?: { body?: unknown; rawBody?: string; token?: string; cookie?: string }): Promise<TestResponse>;
+  request(method: string, path: string, options?: RequestOptions): Promise<TestResponse>;
   register(email: string, clave?: string): Promise<TestResponse>;
   login(email: string, clave: string): Promise<TestResponse>;
   close(): Promise<void>;
 }
 
-export async function startTestApp(options: { rateLimits?: RateLimitOptions } = {}): Promise<TestContext> {
+export async function startTestApp(options: TestAppOptions = {}): Promise<TestContext> {
   const users = new MemoryUserRepository();
   const resetTokens = new MemoryPasswordResetTokenRepository();
   const refreshTokens = new MemoryRefreshTokenRepository();
@@ -76,11 +98,18 @@ export async function startTestApp(options: { rateLimits?: RateLimitOptions } = 
   const vehicleService = new VehicleService(new MemoryVehicleRepository(demoVehicles(), users), () => new Date('2026-09-15T15:00:00Z'));
 
   const app = createApp({
-    config: { isProduction: false, nodeEnv: 'test', corsOrigins: ['http://localhost:4200'] },
+    config: {
+      isProduction: false,
+      nodeEnv: 'test',
+      corsOrigins: ['http://localhost:4200'],
+      cookie: { path: '/auth', sameSite: 'lax', secure: false },
+      trustProxy: 0,
+      ...options.config
+    },
     authService,
     vehicleService,
     tokenService: tokens,
-    rateLimits: options.rateLimits ?? { registerMax: 1000, loginMax: 1000, forgotPasswordMax: 1000, resetPasswordMax: 1000 }
+    rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }
   });
 
   const server: Server = await new Promise((resolve) => {
@@ -88,8 +117,8 @@ export async function startTestApp(options: { rateLimits?: RateLimitOptions } = 
   });
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-  const request: TestContext['request'] = async (method, path, { body, rawBody, token, cookie } = {}) => {
-    const headers: Record<string, string> = {};
+  const request: TestContext['request'] = async (method, path, { body, rawBody, token, cookie, headers: extra } = {}) => {
+    const headers: Record<string, string> = { ...extra };
     const payload = rawBody ?? (body === undefined ? undefined : JSON.stringify(body));
     if (payload !== undefined) headers['content-type'] = 'application/json';
     if (token) headers.authorization = `Bearer ${token}`;

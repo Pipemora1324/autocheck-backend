@@ -38,6 +38,39 @@ describe('loadConfig', () => {
     assert.equal(config.appUrl, 'https://a.vercel.app');
   });
 
+  it('cookie y proxy: valores por defecto por entorno', () => {
+    const dev = loadConfig(valid);
+    assert.deepEqual(dev.cookie, { path: '/auth', sameSite: 'lax', secure: false });
+    assert.equal(dev.trustProxy, 0);
+
+    const prod = loadConfig({ ...valid, NODE_ENV: 'production', CORS_ORIGIN: 'https://a.vercel.app', APP_URL: 'https://a.vercel.app' });
+    assert.deepEqual(prod.cookie, { path: '/auth', sameSite: 'strict', secure: true });
+    assert.equal(prod.trustProxy, 1);
+  });
+
+  it('cookie y proxy: configuración para Vercel + Render', () => {
+    const config = loadConfig({
+      ...valid,
+      NODE_ENV: 'production',
+      CORS_ORIGIN: 'https://a.vercel.app',
+      APP_URL: 'https://a.vercel.app',
+      COOKIE_PATH: '/api/auth',
+      COOKIE_SAMESITE: 'Lax',
+      TRUST_PROXY: '2'
+    });
+    assert.deepEqual(config.cookie, { path: '/api/auth', sameSite: 'lax', secure: true });
+    assert.equal(config.trustProxy, 2);
+  });
+
+  it('rechaza configuraciones inseguras o inválidas de cookie, proxy y CORS', () => {
+    assert.throws(() => loadConfig({ ...valid, COOKIE_SAMESITE: 'none' }), /COOKIE_SAMESITE: none requiere/);
+    assert.throws(() => loadConfig({ ...valid, COOKIE_SAMESITE: 'abierta' }), /COOKIE_SAMESITE/);
+    assert.throws(() => loadConfig({ ...valid, COOKIE_PATH: 'api/auth' }), /COOKIE_PATH/);
+    assert.throws(() => loadConfig({ ...valid, TRUST_PROXY: '-1' }), /TRUST_PROXY/);
+    assert.throws(() => loadConfig({ ...valid, CORS_ORIGIN: '*' }), /CORS_ORIGIN: Origen inválido/);
+    assert.throws(() => loadConfig({ ...valid, CORS_ORIGIN: 'https://a.vercel.app/' }), /CORS_ORIGIN/);
+  });
+
   it('pide completar SMTP si está a medias', () => {
     assert.throws(() => loadConfig({ ...valid, SMTP_HOST: 'smtp.example.com' }), /SMTP_USER[\s\S]*SMTP_PASS[\s\S]*MAIL_FROM/);
     const config = loadConfig({ ...valid, SMTP_HOST: 'smtp.example.com', SMTP_PORT: '465', SMTP_USER: 'u', SMTP_PASS: 'p', MAIL_FROM: 'AutoCheck <no-reply@example.com>' });

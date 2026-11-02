@@ -91,6 +91,8 @@ export interface TestAppOptions {
   cardReader?: CardReader | null;
   /** Por defecto RUNT_PROVIDER=none. */
   lookupProvider?: VehicleLookupProvider;
+  /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */
+  mailer?: Mailer;
 }
 
 export interface TestContext {
@@ -133,7 +135,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     refreshTokens,
     hasher: new Argon2PasswordHasher(),
     tokens,
-    mailer,
+    mailer: options.mailer ?? mailer,
     appUrl: 'http://localhost:4200',
     now: () => clock.now
   });

@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type {
-  PasswordResetTokenRepository,
+  OneTimeTokenRepository,
   RefreshTokenRecord,
   RefreshTokenRepository,
   UserRecord,
@@ -15,6 +15,7 @@ interface UserRow {
   email: string;
   password_hash: string;
   role: UserRole;
+  email_verified_at: Date | null;
   created_at: Date;
 }
 
@@ -23,6 +24,7 @@ const toUser = (row: UserRow): UserRecord => ({
   email: row.email,
   passwordHash: row.password_hash,
   role: row.role,
+  emailVerifiedAt: row.email_verified_at?.toISOString() ?? null,
   createdAt: row.created_at.toISOString()
 });
 
@@ -55,33 +57,52 @@ export class PgUserRepository implements UserRepository {
   async updatePassword(id: string, passwordHash: string): Promise<void> {
     await this.pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [id, passwordHash]);
   }
+
+  async markEmailVerified(id: string, at: Date): Promise<void> {
+    await this.pool.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE id = $1', [id, at]);
+  }
 }
 
-export class PgPasswordResetTokenRepository implements PasswordResetTokenRepository {
-  constructor(private readonly pool: pg.Pool) {}
+// Nombres de tabla fijos (no vienen del usuario): es seguro interpolarlos en el SQL.
+type OneTimeTokenTable = 'password_reset_tokens' | 'email_verification_tokens';
+
+class PgOneTimeTokenRepository implements OneTimeTokenRepository {
+  constructor(
+    private readonly pool: pg.Pool,
+    private readonly table: OneTimeTokenTable
+  ) {}
 
   async create(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
-    await this.pool.query(
-      'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-      [userId, tokenHash, expiresAt]
-    );
+    await this.pool.query(`INSERT INTO ${this.table} (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`, [userId, tokenHash, expiresAt]);
   }
 
   async consume(tokenHash: string, now: Date): Promise<string | null> {
     // Un solo UPDATE condicional garantiza el uso único aunque lleguen dos solicitudes a la vez.
     const { rows } = await this.pool.query<{ user_id: string }>(
       `WITH consumed AS (
-         UPDATE password_reset_tokens SET used_at = $2
+         UPDATE ${this.table} SET used_at = $2
          WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
          RETURNING user_id
        ), invalidated AS (
-         UPDATE password_reset_tokens SET used_at = $2
+         UPDATE ${this.table} SET used_at = $2
          WHERE user_id IN (SELECT user_id FROM consumed) AND token_hash <> $1 AND used_at IS NULL
        )
        SELECT user_id FROM consumed`,
       [tokenHash, now]
     );
     return rows[0]?.user_id ?? null;
+  }
+}
+
+export class PgPasswordResetTokenRepository extends PgOneTimeTokenRepository {
+  constructor(pool: pg.Pool) {
+    super(pool, 'password_reset_tokens');
+  }
+}
+
+export class PgEmailVerificationTokenRepository extends PgOneTimeTokenRepository {
+  constructor(pool: pg.Pool) {
+    super(pool, 'email_verification_tokens');
   }
 }
 

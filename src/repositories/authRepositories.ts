@@ -5,6 +5,7 @@ export interface UserRecord {
   email: string;
   passwordHash: string;
   role: UserRole;
+  emailVerifiedAt: string | null;
   createdAt: string;
 }
 
@@ -14,9 +15,12 @@ export interface UserRepository {
   /** Devuelve null si el correo ya está registrado. */
   create(email: string, passwordHash: string): Promise<UserRecord | null>;
   updatePassword(id: string, passwordHash: string): Promise<void>;
+  /** Marca el correo como verificado; si ya lo estaba, conserva la fecha original. */
+  markEmailVerified(id: string, at: Date): Promise<void>;
 }
 
-export interface PasswordResetTokenRepository {
+/** Tokens de un solo uso (recuperación de contraseña, verificación de correo): solo se guarda su hash. */
+export interface OneTimeTokenRepository {
   create(userId: string, tokenHash: string, expiresAt: Date): Promise<void>;
   /**
    * Marca como usado el token si está vigente y sin usar, e invalida los demás tokens
@@ -24,6 +28,9 @@ export interface PasswordResetTokenRepository {
    */
   consume(tokenHash: string, now: Date): Promise<string | null>;
 }
+
+export type PasswordResetTokenRepository = OneTimeTokenRepository;
+export type EmailVerificationTokenRepository = OneTimeTokenRepository;
 
 export interface RefreshTokenRecord {
   id: string;

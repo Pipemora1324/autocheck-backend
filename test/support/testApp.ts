@@ -93,6 +93,7 @@ export interface TestAppOptions {
   lookupProvider?: VehicleLookupProvider;
   /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */
   mailer?: Mailer;
+  adminEmails?: string[];
 }
 
 export interface TestContext {
@@ -136,6 +137,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     hasher: new Argon2PasswordHasher(),
     tokens,
     mailer: options.mailer ?? mailer,
+    adminEmails: options.adminEmails ?? [],
     appUrl: 'http://localhost:4200',
     now: () => clock.now
   });

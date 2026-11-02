@@ -53,6 +53,11 @@ export class MemoryUserRepository implements UserRepository {
     if (user && !user.emailVerifiedAt) user.emailVerifiedAt = at.toISOString();
   }
 
+  async updateRole(id: string, role: UserRole) {
+    const user = this.users.get(id);
+    if (user) user.role = role;
+  }
+
   async delete(id: string) {
     this.users.delete(id);
     for (const listener of this.onDelete) listener(id);

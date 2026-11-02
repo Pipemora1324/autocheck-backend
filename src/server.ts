@@ -45,7 +45,8 @@ function start(): void {
     hasher: new Argon2PasswordHasher(),
     tokens: tokenService,
     mailer: createMailer(config),
-    appUrl: config.appUrl
+    appUrl: config.appUrl,
+    adminEmails: config.adminEmails
   });
   const vehicleService = new VehicleService(new PgVehicleRepository(pool));
   const garageRepository = new PgGarageRepository(pool);

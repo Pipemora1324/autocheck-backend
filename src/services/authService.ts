@@ -42,6 +42,8 @@ export interface AuthServiceDeps {
   tokens: TokenService;
   mailer: Mailer;
   appUrl: string;
+  /** ADMIN_EMAILS: reciben rol admin solo cuando su correo ya está verificado. */
+  adminEmails?: string[];
   now?: () => Date;
 }
 
@@ -56,10 +58,12 @@ const toPublicUser = (user: UserRecord): PublicUser => ({ ...toAuthUser(user), e
 
 export class AuthService {
   private readonly now: () => Date;
+  private readonly adminEmails: Set<string>;
   private dummyHash: Promise<string> | null = null;
 
   constructor(private readonly deps: AuthServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.adminEmails = new Set((deps.adminEmails ?? []).map((email) => email.toLowerCase()));
   }
 
   /** El controlador ya exige acceptedTerms === true; aquí se deja evidencia de la fecha y la versión aceptada. */
@@ -81,6 +85,8 @@ export class AuthService {
     const userId = await this.deps.verificationTokens.consume(hashOneTimeToken(token), now);
     if (!userId) throw badRequest(INVALID_VERIFICATION_TOKEN);
     await this.deps.users.markEmailVerified(userId, now);
+    const user = await this.deps.users.findById(userId);
+    if (user) await this.promoteIfAdmin(user);
   }
 
   /** No revela si el correo existe ni si ya estaba verificado: el controlador responde siempre lo mismo. */
@@ -96,7 +102,7 @@ export class AuthService {
     const hash = user?.passwordHash ?? (await this.getDummyHash());
     const valid = await this.deps.hasher.verify(hash, password);
     if (!user || !valid) throw unauthorized(INVALID_CREDENTIALS);
-    return this.startSession(user, randomUUID());
+    return this.startSession(await this.promoteIfAdmin(user), randomUUID());
   }
 
   async refresh(refreshToken: string | undefined): Promise<Session> {
@@ -179,6 +185,17 @@ export class AuthService {
       refreshToken: this.deps.tokens.signRefreshToken({ userId: user.id, tokenId, familyId }),
       refreshExpiresAt
     };
+  }
+
+  /**
+   * Asigna rol admin a los correos de ADMIN_EMAILS, solo si el correo ya está verificado: así nadie obtiene
+   * el rol registrándose con un correo ajeno. Quitar un correo de la lista no revoca el rol (se hace por SQL).
+   */
+  private async promoteIfAdmin(user: UserRecord): Promise<UserRecord> {
+    if (!user.emailVerifiedAt || user.role === 'admin' || !this.adminEmails.has(user.email)) return user;
+    await this.deps.users.updateRole(user.id, 'admin');
+    console.info('Rol admin asignado a una cuenta de ADMIN_EMAILS.');
+    return { ...user, role: 'admin' };
   }
 
   private async sendVerification(user: UserRecord): Promise<void> {

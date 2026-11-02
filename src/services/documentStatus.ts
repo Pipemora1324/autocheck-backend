@@ -16,7 +16,29 @@ function daysBetween(fromDate: string, toDate: string): number {
 const ALERTS: Record<VehicleStatus, AlertLevel> = { Vigente: 'verde', 'Por Vencer': 'amarillo', Vencido: 'rojo' };
 
 export function documentStatus(number: string, expirationDate: string, now: Date): DocumentStatus {
+  return { number, ...expirationStatus(expirationDate, now) };
+}
+
+export interface ExpirationStatus {
+  status: VehicleStatus;
+  expirationDate: string;
+  daysToExpire: number;
+  alert: AlertLevel;
+}
+
+export interface MissingExpiration {
+  status: 'Sin información';
+  expirationDate: null;
+  daysToExpire: null;
+  alert: 'gris';
+}
+
+/** Vigente / Por Vencer (30 días o menos, incluido el día del vencimiento) / Vencido, con la fecha de hoy en Colombia. */
+export function expirationStatus(expirationDate: string, now: Date): ExpirationStatus;
+export function expirationStatus(expirationDate: string | null, now: Date): ExpirationStatus | MissingExpiration;
+export function expirationStatus(expirationDate: string | null, now: Date): ExpirationStatus | MissingExpiration {
+  if (!expirationDate) return { status: 'Sin información', expirationDate: null, daysToExpire: null, alert: 'gris' };
   const daysToExpire = daysBetween(todayInColombia(now), expirationDate);
   const status: VehicleStatus = daysToExpire < 0 ? 'Vencido' : daysToExpire <= EXPIRING_SOON_DAYS ? 'Por Vencer' : 'Vigente';
-  return { number, status, expirationDate, daysToExpire, alert: ALERTS[status] };
+  return { status, expirationDate, daysToExpire, alert: ALERTS[status] };
 }

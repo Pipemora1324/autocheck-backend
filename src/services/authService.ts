@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { badRequest, conflict, unauthorized } from '../errors/httpError.js';
 import type {
+  EmailVerificationTokenRepository,
   PasswordResetTokenRepository,
   RefreshTokenRepository,
   UserRecord,
@@ -11,12 +12,19 @@ import type { PasswordHasher } from './passwordHasher.js';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, type AuthUser, type TokenService } from './tokenService.js';
 
 export const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+export const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 export const INVALID_CREDENTIALS = 'Credenciales inválidas.';
 export const INVALID_RESET_TOKEN = 'El enlace de recuperación no es válido o ya expiró.';
+export const INVALID_VERIFICATION_TOKEN = 'El enlace de verificación no es válido o ya expiró. Solicita uno nuevo.';
 export const INVALID_SESSION = 'La sesión no es válida o expiró. Inicia sesión de nuevo.';
 
+/** Usuario tal como se entrega al cliente (el access token solo lleva id, email y rol). */
+export interface PublicUser extends AuthUser {
+  emailVerified: boolean;
+}
+
 export interface Session {
-  user: AuthUser;
+  user: PublicUser;
   accessToken: string;
   expiresIn: number;
   refreshToken: string;
@@ -26,6 +34,7 @@ export interface Session {
 export interface AuthServiceDeps {
   users: UserRepository;
   resetTokens: PasswordResetTokenRepository;
+  verificationTokens: EmailVerificationTokenRepository;
   refreshTokens: RefreshTokenRepository;
   hasher: PasswordHasher;
   tokens: TokenService;
@@ -34,9 +43,14 @@ export interface AuthServiceDeps {
   now?: () => Date;
 }
 
+/** sha256 de un token de un solo uso: en la base nunca se guarda el token en claro. */
 export const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex');
+export const hashOneTimeToken = hashResetToken;
+
+const newOneTimeToken = () => randomBytes(32).toString('base64url');
 
 const toAuthUser = (user: UserRecord): AuthUser => ({ id: user.id, email: user.email, role: user.role });
+const toPublicUser = (user: UserRecord): PublicUser => ({ ...toAuthUser(user), emailVerified: user.emailVerifiedAt !== null });
 
 export class AuthService {
   private readonly now: () => Date;
@@ -50,7 +64,22 @@ export class AuthService {
     const passwordHash = await this.deps.hasher.hash(password);
     const user = await this.deps.users.create(email, passwordHash);
     if (!user) throw conflict('Ya existe una cuenta con este correo.');
+    await this.sendVerification(user);
     return this.startSession(user, randomUUID());
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const now = this.now();
+    const userId = await this.deps.verificationTokens.consume(hashOneTimeToken(token), now);
+    if (!userId) throw badRequest(INVALID_VERIFICATION_TOKEN);
+    await this.deps.users.markEmailVerified(userId, now);
+  }
+
+  /** No revela si el correo existe ni si ya estaba verificado: el controlador responde siempre lo mismo. */
+  async resendVerification(email: string): Promise<void> {
+    const user = await this.deps.users.findByEmail(email);
+    if (!user || user.emailVerifiedAt) return;
+    await this.sendVerification(user);
   }
 
   async login(email: string, password: string): Promise<Session> {
@@ -84,10 +113,10 @@ export class AuthService {
     if (claims) await this.deps.refreshTokens.revokeFamily(claims.familyId, this.now());
   }
 
-  async me(userId: string): Promise<AuthUser & { createdAt: string }> {
+  async me(userId: string): Promise<PublicUser & { createdAt: string }> {
     const user = await this.deps.users.findById(userId);
     if (!user) throw unauthorized();
-    return { ...toAuthUser(user), createdAt: user.createdAt };
+    return { ...toPublicUser(user), createdAt: user.createdAt };
   }
 
   /** No revela si el correo existe: el controlador responde lo mismo en ambos casos. */
@@ -95,7 +124,7 @@ export class AuthService {
     const user = await this.deps.users.findByEmail(email);
     if (!user) return;
 
-    const token = randomBytes(32).toString('base64url');
+    const token = newOneTimeToken();
     const expiresAt = new Date(this.now().getTime() + RESET_TOKEN_TTL_MS);
     await this.deps.resetTokens.create(user.id, hashResetToken(token), expiresAt);
 
@@ -120,14 +149,25 @@ export class AuthService {
     const refreshExpiresAt = new Date(this.now().getTime() + REFRESH_TOKEN_TTL_SECONDS * 1000);
     await this.deps.refreshTokens.create({ id: tokenId, userId: user.id, familyId }, refreshExpiresAt);
 
-    const authUser = toAuthUser(user);
     return {
-      user: authUser,
-      accessToken: this.deps.tokens.signAccessToken(authUser),
+      user: toPublicUser(user),
+      accessToken: this.deps.tokens.signAccessToken(toAuthUser(user)),
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
       refreshToken: this.deps.tokens.signRefreshToken({ userId: user.id, tokenId, familyId }),
       refreshExpiresAt
     };
+  }
+
+  private async sendVerification(user: UserRecord): Promise<void> {
+    const token = newOneTimeToken();
+    const expiresAt = new Date(this.now().getTime() + VERIFICATION_TOKEN_TTL_MS);
+    await this.deps.verificationTokens.create(user.id, hashOneTimeToken(token), expiresAt);
+
+    const verifyUrl = `${this.deps.appUrl}/verify-email?token=${encodeURIComponent(token)}`;
+    // Sin await: ni el registro ni el reenvío dependen de que el proveedor de correo responda.
+    this.deps.mailer.sendEmailVerification(user.email, verifyUrl).catch((error: Error) => {
+      console.error('No se pudo enviar el correo de verificación:', error.message);
+    });
   }
 
   private getDummyHash(): Promise<string> {

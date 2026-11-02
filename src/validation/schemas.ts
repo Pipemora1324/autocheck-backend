@@ -22,10 +22,16 @@ export const loginSchema = z.object({
 
 export const forgotPasswordSchema = z.object({ email: emailSchema });
 
+const oneTimeTokenSchema = z.string({ error: 'El token es obligatorio.' }).trim().min(1, 'El token es obligatorio.').max(256);
+
 export const resetPasswordSchema = z.object({
-  token: z.string({ error: 'El token es obligatorio.' }).trim().min(1, 'El token es obligatorio.').max(256),
+  token: oneTimeTokenSchema,
   password: newPasswordSchema
 });
+
+export const verifyEmailSchema = z.object({ token: oneTimeTokenSchema });
+
+export const resendVerificationSchema = z.object({ email: emailSchema });
 
 export const plateSchema = z
   .string({ error: 'La placa es obligatoria.' })

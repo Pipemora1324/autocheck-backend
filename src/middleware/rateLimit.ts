@@ -10,6 +10,9 @@ export interface AuthRateLimits {
   forgotPassword: RequestHandler;
   forgotPasswordByEmail: RequestHandler;
   resetPassword: RequestHandler;
+  verifyEmail: RequestHandler;
+  resendVerification: RequestHandler;
+  resendVerificationByEmail: RequestHandler;
 }
 
 export interface RateLimitOptions {
@@ -19,6 +22,9 @@ export interface RateLimitOptions {
   forgotPasswordMax?: number;
   forgotPasswordEmailMax?: number;
   resetPasswordMax?: number;
+  verifyEmailMax?: number;
+  resendVerificationMax?: number;
+  resendVerificationEmailMax?: number;
 }
 
 const limiter = (limit: number, message: string): RequestHandler =>
@@ -55,6 +61,9 @@ export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLi
     loginByEmail: emailLimiter(options.loginEmailMax ?? 10, 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'),
     forgotPassword: limiter(options.forgotPasswordMax ?? 5, 'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'),
     forgotPasswordByEmail: emailLimiter(options.forgotPasswordEmailMax ?? 3, 'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'),
-    resetPassword: limiter(options.resetPasswordMax ?? 10, 'Demasiados intentos de restablecimiento. Intenta de nuevo en 15 minutos.')
+    resetPassword: limiter(options.resetPasswordMax ?? 10, 'Demasiados intentos de restablecimiento. Intenta de nuevo en 15 minutos.'),
+    verifyEmail: limiter(options.verifyEmailMax ?? 10, 'Demasiados intentos de verificación. Intenta de nuevo en 15 minutos.'),
+    resendVerification: limiter(options.resendVerificationMax ?? 5, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'),
+    resendVerificationByEmail: emailLimiter(options.resendVerificationEmailMax ?? 3, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.')
   };
 }

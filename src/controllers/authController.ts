@@ -2,10 +2,18 @@ import type { CookieOptions, Request, Response } from 'express';
 import type { CookieConfig } from '../config/env.js';
 import { currentUser } from '../middleware/auth.js';
 import type { AuthService, Session } from '../services/authService.js';
-import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from '../validation/schemas.js';
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resendVerificationSchema,
+  resetPasswordSchema,
+  verifyEmailSchema
+} from '../validation/schemas.js';
 
 export const REFRESH_COOKIE = 'autocheck_refresh';
 export const FORGOT_PASSWORD_MESSAGE = 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';
+export const RESEND_VERIFICATION_MESSAGE = 'Si el correo está registrado y aún no se ha confirmado, recibirás un nuevo enlace de verificación.';
 
 export function createAuthController(service: AuthService, cookie: CookieConfig) {
   // Detrás del rewrite de Vercel (/api/* → Render) el navegador ve /api/auth/...: la ruta de la cookie
@@ -68,6 +76,18 @@ export function createAuthController(service: AuthService, cookie: CookieConfig)
       const { token, password } = resetPasswordSchema.parse(request.body);
       await service.resetPassword(token, password);
       response.json({ message: 'Tu contraseña fue actualizada. Ya puedes iniciar sesión.' });
+    },
+
+    async verifyEmail(request: Request, response: Response): Promise<void> {
+      const { token } = verifyEmailSchema.parse(request.body);
+      await service.verifyEmail(token);
+      response.json({ message: 'Tu correo fue confirmado.', emailVerified: true });
+    },
+
+    async resendVerification(request: Request, response: Response): Promise<void> {
+      const { email } = resendVerificationSchema.parse(request.body);
+      await service.resendVerification(email);
+      response.status(202).json({ message: RESEND_VERIFICATION_MESSAGE });
     }
   };
 }

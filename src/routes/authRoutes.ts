@@ -11,6 +11,8 @@ export function createAuthRoutes(controller: AuthController, authenticate: Reque
   router.post('/auth/logout', controller.logout);
   router.post('/auth/forgot-password', limits.forgotPassword, limits.forgotPasswordByEmail, controller.forgotPassword);
   router.post('/auth/reset-password', limits.resetPassword, controller.resetPassword);
+  router.post('/auth/verify-email', limits.verifyEmail, controller.verifyEmail);
+  router.post('/auth/resend-verification', limits.resendVerification, limits.resendVerificationByEmail, controller.resendVerification);
   router.get('/auth/me', authenticate, controller.me);
 
   return router;

@@ -55,6 +55,7 @@ export function createApp({ config, authService, vehicleService, garageService, 
   app.get('/health', (_request, response) => {
     response.json({ status: 'ok', service: 'AutoCheck-CO' });
   });
+  app.get('/config/public', createRuntController(runtLookupService, cardScanService).publicConfig);
 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));
   app.use(createVehicleRoutes(createVehicleController(vehicleService), authenticate, requireVerified));

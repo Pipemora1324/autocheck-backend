@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type {
+  NewUser,
   OneTimeTokenRepository,
   RefreshTokenRecord,
   RefreshTokenRepository,
@@ -16,6 +17,8 @@ interface UserRow {
   password_hash: string;
   role: UserRole;
   email_verified_at: Date | null;
+  terms_accepted_at: Date | null;
+  terms_version: string | null;
   created_at: Date;
 }
 
@@ -25,6 +28,8 @@ const toUser = (row: UserRow): UserRecord => ({
   passwordHash: row.password_hash,
   role: row.role,
   emailVerifiedAt: row.email_verified_at?.toISOString() ?? null,
+  termsAcceptedAt: row.terms_accepted_at?.toISOString() ?? null,
+  termsVersion: row.terms_version,
   createdAt: row.created_at.toISOString()
 });
 
@@ -41,11 +46,11 @@ export class PgUserRepository implements UserRepository {
     return rows[0] ? toUser(rows[0]) : null;
   }
 
-  async create(email: string, passwordHash: string): Promise<UserRecord | null> {
+  async create(user: NewUser): Promise<UserRecord | null> {
     try {
       const { rows } = await this.pool.query<UserRow>(
-        'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING *',
-        [email, passwordHash]
+        'INSERT INTO users (email, password_hash, terms_accepted_at, terms_version) VALUES ($1, $2, $3, $4) RETURNING *',
+        [user.email, user.passwordHash, user.termsAcceptedAt, user.termsVersion]
       );
       return toUser(rows[0]!);
     } catch (error) {
@@ -60,6 +65,10 @@ export class PgUserRepository implements UserRepository {
 
   async markEmailVerified(id: string, at: Date): Promise<void> {
     await this.pool.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE id = $1', [id, at]);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.pool.query('DELETE FROM users WHERE id = $1', [id]);
   }
 }
 

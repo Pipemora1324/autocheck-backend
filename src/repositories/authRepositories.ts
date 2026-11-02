@@ -6,17 +6,28 @@ export interface UserRecord {
   passwordHash: string;
   role: UserRole;
   emailVerifiedAt: string | null;
+  termsAcceptedAt: string | null;
+  termsVersion: string | null;
   createdAt: string;
+}
+
+export interface NewUser {
+  email: string;
+  passwordHash: string;
+  termsAcceptedAt: Date;
+  termsVersion: string;
 }
 
 export interface UserRepository {
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
   /** Devuelve null si el correo ya está registrado. */
-  create(email: string, passwordHash: string): Promise<UserRecord | null>;
+  create(user: NewUser): Promise<UserRecord | null>;
   updatePassword(id: string, passwordHash: string): Promise<void>;
   /** Marca el correo como verificado; si ya lo estaba, conserva la fecha original. */
   markEmailVerified(id: string, at: Date): Promise<void>;
+  /** Borra la cuenta; sesiones, tokens y vehículos del garaje se eliminan en cascada. */
+  delete(id: string): Promise<void>;
 }
 
 /** Tokens de un solo uso (recuperación de contraseña, verificación de correo): solo se guarda su hash. */

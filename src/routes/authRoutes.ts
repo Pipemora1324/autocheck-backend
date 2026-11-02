@@ -14,6 +14,7 @@ export function createAuthRoutes(controller: AuthController, authenticate: Reque
   router.post('/auth/verify-email', limits.verifyEmail, controller.verifyEmail);
   router.post('/auth/resend-verification', limits.resendVerification, limits.resendVerificationByEmail, controller.resendVerification);
   router.get('/auth/me', authenticate, controller.me);
+  router.delete('/auth/me', authenticate, limits.deleteAccount, controller.deleteAccount);
 
   return router;
 }

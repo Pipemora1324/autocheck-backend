@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { badRequest, conflict, unauthorized } from '../errors/httpError.js';
+import { badRequest, conflict, forbidden, unauthorized } from '../errors/httpError.js';
 import type {
   EmailVerificationTokenRepository,
   PasswordResetTokenRepository,
@@ -9,6 +9,7 @@ import type {
 } from '../repositories/authRepositories.js';
 import type { Mailer } from './mailer.js';
 import type { PasswordHasher } from './passwordHasher.js';
+import { PRIVACY_POLICY_VERSION } from './privacyPolicy.js';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, type AuthUser, type TokenService } from './tokenService.js';
 
 export const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -16,6 +17,7 @@ export const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 export const INVALID_CREDENTIALS = 'Credenciales inválidas.';
 export const INVALID_RESET_TOKEN = 'El enlace de recuperación no es válido o ya expiró.';
 export const INVALID_VERIFICATION_TOKEN = 'El enlace de verificación no es válido o ya expiró. Solicita uno nuevo.';
+export const WRONG_PASSWORD_CODE = 'INVALID_PASSWORD';
 export const INVALID_SESSION = 'La sesión no es válida o expiró. Inicia sesión de nuevo.';
 
 /** Usuario tal como se entrega al cliente (el access token solo lleva id, email y rol). */
@@ -60,9 +62,15 @@ export class AuthService {
     this.now = deps.now ?? (() => new Date());
   }
 
+  /** El controlador ya exige acceptedTerms === true; aquí se deja evidencia de la fecha y la versión aceptada. */
   async register(email: string, password: string): Promise<Session> {
     const passwordHash = await this.deps.hasher.hash(password);
-    const user = await this.deps.users.create(email, passwordHash);
+    const user = await this.deps.users.create({
+      email,
+      passwordHash,
+      termsAcceptedAt: this.now(),
+      termsVersion: PRIVACY_POLICY_VERSION
+    });
     if (!user) throw conflict('Ya existe una cuenta con este correo.');
     await this.sendVerification(user);
     return this.startSession(user, randomUUID());
@@ -113,10 +121,25 @@ export class AuthService {
     if (claims) await this.deps.refreshTokens.revokeFamily(claims.familyId, this.now());
   }
 
-  async me(userId: string): Promise<PublicUser & { createdAt: string }> {
+  async me(userId: string): Promise<PublicUser & { createdAt: string; termsAcceptedAt: string | null; termsVersion: string | null }> {
     const user = await this.deps.users.findById(userId);
     if (!user) throw unauthorized();
-    return { ...toPublicUser(user), createdAt: user.createdAt };
+    return { ...toPublicUser(user), createdAt: user.createdAt, termsAcceptedAt: user.termsAcceptedAt, termsVersion: user.termsVersion };
+  }
+
+  /**
+   * Borra la cuenta y, en cascada, sus sesiones, tokens y vehículos del garaje. Exige la contraseña
+   * actual: un access token robado no basta para borrar la cuenta.
+   */
+  async deleteAccount(userId: string, password: string): Promise<void> {
+    const user = await this.deps.users.findById(userId);
+    if (!user) throw unauthorized();
+    // 403 y no 401: un 401 haría que el frontend intente renovar la sesión y luego la cierre.
+    if (!(await this.deps.hasher.verify(user.passwordHash, password))) {
+      throw forbidden('La contraseña no es correcta.', { code: WRONG_PASSWORD_CODE });
+    }
+    await this.deps.refreshTokens.revokeAllForUser(userId, this.now());
+    await this.deps.users.delete(userId);
   }
 
   /** No revela si el correo existe: el controlador responde lo mismo en ambos casos. */

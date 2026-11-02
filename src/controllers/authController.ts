@@ -3,6 +3,7 @@ import type { CookieConfig } from '../config/env.js';
 import { currentUser } from '../middleware/auth.js';
 import type { AuthService, Session } from '../services/authService.js';
 import {
+  deleteAccountSchema,
   forgotPasswordSchema,
   loginSchema,
   registerSchema,
@@ -64,6 +65,12 @@ export function createAuthController(service: AuthService, cookie: CookieConfig)
 
     async me(request: Request, response: Response): Promise<void> {
       response.json({ user: await service.me(currentUser(request).id) });
+    },
+
+    async deleteAccount(request: Request, response: Response): Promise<void> {
+      const { password } = deleteAccountSchema.parse(request.body);
+      await service.deleteAccount(currentUser(request).id, password);
+      response.clearCookie(REFRESH_COOKIE, cookieOptions).status(204).end();
     },
 
     async forgotPassword(request: Request, response: Response): Promise<void> {

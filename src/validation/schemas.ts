@@ -13,7 +13,16 @@ export const newPasswordSchema = z
   .min(8, 'La contraseña debe tener al menos 8 caracteres.')
   .max(128, 'La contraseña no puede superar 128 caracteres.');
 
-export const registerSchema = z.object({ email: emailSchema, password: newPasswordSchema });
+// Ley 1581 de 2012: la autorización para el tratamiento de datos debe ser previa, expresa e informada.
+export const registerSchema = z.object({
+  email: emailSchema,
+  password: newPasswordSchema,
+  acceptedTerms: z.literal(true, { error: 'Debes aceptar la política de tratamiento de datos personales para crear tu cuenta.' })
+});
+
+export const deleteAccountSchema = z.object({
+  password: z.string({ error: 'Confirma tu contraseña para eliminar la cuenta.' }).min(1, 'Confirma tu contraseña para eliminar la cuenta.').max(128)
+});
 
 export const loginSchema = z.object({
   email: emailSchema,

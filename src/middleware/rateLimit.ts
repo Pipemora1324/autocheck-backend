@@ -13,6 +13,7 @@ export interface AuthRateLimits {
   verifyEmail: RequestHandler;
   resendVerification: RequestHandler;
   resendVerificationByEmail: RequestHandler;
+  deleteAccount: RequestHandler;
 }
 
 export interface RateLimitOptions {
@@ -25,6 +26,7 @@ export interface RateLimitOptions {
   verifyEmailMax?: number;
   resendVerificationMax?: number;
   resendVerificationEmailMax?: number;
+  deleteAccountMax?: number;
 }
 
 const limiter = (limit: number, message: string): RequestHandler =>
@@ -64,6 +66,7 @@ export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLi
     resetPassword: limiter(options.resetPasswordMax ?? 10, 'Demasiados intentos de restablecimiento. Intenta de nuevo en 15 minutos.'),
     verifyEmail: limiter(options.verifyEmailMax ?? 10, 'Demasiados intentos de verificación. Intenta de nuevo en 15 minutos.'),
     resendVerification: limiter(options.resendVerificationMax ?? 5, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'),
-    resendVerificationByEmail: emailLimiter(options.resendVerificationEmailMax ?? 3, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.')
+    resendVerificationByEmail: emailLimiter(options.resendVerificationEmailMax ?? 3, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'),
+    deleteAccount: limiter(options.deleteAccountMax ?? 5, 'Demasiados intentos de eliminar la cuenta. Intenta de nuevo en 15 minutos.')
   };
 }

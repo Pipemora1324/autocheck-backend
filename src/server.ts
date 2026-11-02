@@ -1,7 +1,12 @@
 import { createApp } from './app.js';
 import { EnvValidationError, loadConfig } from './config/env.js';
 import { createPool } from './db/pool.js';
-import { PgPasswordResetTokenRepository, PgRefreshTokenRepository, PgUserRepository } from './repositories/pgAuthRepositories.js';
+import {
+  PgEmailVerificationTokenRepository,
+  PgPasswordResetTokenRepository,
+  PgRefreshTokenRepository,
+  PgUserRepository
+} from './repositories/pgAuthRepositories.js';
 import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
 import { AuthService } from './services/authService.js';
 import { createMailer } from './services/mailer.js';
@@ -22,14 +27,16 @@ function start(): void {
   }
 
   if (config.isProduction && !config.smtp) {
-    console.warn('SMTP no configurado: la recuperación de contraseña no enviará correos hasta definir SMTP_*.');
+    console.warn('SMTP no configurado: no se enviarán correos de verificación ni de recuperación hasta definir SMTP_*.');
   }
 
   const pool = createPool(config.databaseUrl);
   const tokenService = new TokenService(config.jwtSecret, config.jwtRefreshSecret);
+  const users = new PgUserRepository(pool);
   const authService = new AuthService({
-    users: new PgUserRepository(pool),
+    users,
     resetTokens: new PgPasswordResetTokenRepository(pool),
+    verificationTokens: new PgEmailVerificationTokenRepository(pool),
     refreshTokens: new PgRefreshTokenRepository(pool),
     hasher: new Argon2PasswordHasher(),
     tokens: tokenService,
@@ -38,7 +45,7 @@ function start(): void {
   });
   const vehicleService = new VehicleService(new PgVehicleRepository(pool));
 
-  const app = createApp({ config, authService, vehicleService, tokenService });
+  const app = createApp({ config, authService, vehicleService, tokenService, users });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });

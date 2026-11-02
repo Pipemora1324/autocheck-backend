@@ -6,7 +6,8 @@ import morgan from 'morgan';
 import type { AppConfig } from './config/env.js';
 import { createAuthController } from './controllers/authController.js';
 import { createVehicleController } from './controllers/vehicleController.js';
-import { requireAuth } from './middleware/auth.js';
+import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
+import type { UserRepository } from './repositories/authRepositories.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { createAuthRateLimits, type RateLimitOptions } from './middleware/rateLimit.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
@@ -20,12 +21,14 @@ export interface AppDeps {
   authService: AuthService;
   vehicleService: VehicleService;
   tokenService: TokenService;
+  users: UserRepository;
   rateLimits?: RateLimitOptions;
 }
 
-export function createApp({ config, authService, vehicleService, tokenService, rateLimits }: AppDeps): Express {
+export function createApp({ config, authService, vehicleService, tokenService, users, rateLimits }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
+  const requireVerified = requireVerifiedEmail(users);
 
   // Número de proxies de confianza delante de Express, para que req.ip (y el rate limit) sea la IP real:
   // 1 = solo el balanceador de Render; 2 = Vercel (rewrite /api/*) + Render. Ver DEPLOY.md.
@@ -44,7 +47,7 @@ export function createApp({ config, authService, vehicleService, tokenService, r
   });
 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));
-  app.use(createVehicleRoutes(createVehicleController(vehicleService), authenticate));
+  app.use(createVehicleRoutes(createVehicleController(vehicleService), authenticate, requireVerified));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

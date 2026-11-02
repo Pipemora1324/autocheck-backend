@@ -25,7 +25,10 @@ const envSchema = z
       z.enum(['strict', 'lax', 'none'], { error: 'Debe ser strict, lax o none' }).optional()
     ),
     // Cantidad de proxies delante de Express (ver DEPLOY.md, "Proxies y rate limit").
-    TRUST_PROXY: z.preprocess((value) => (value === '' ? undefined : value), z.coerce.number().int().min(0).max(5).optional())
+    TRUST_PROXY: z.preprocess((value) => (value === '' ? undefined : value), z.coerce.number().int().min(0).max(5).optional()),
+    // Lectura de la tarjeta de propiedad con visión. Sin clave, POST /garage/scan-card responde 503.
+    ANTHROPIC_API_KEY: optionalString,
+    ANTHROPIC_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('claude-opus-5-5'))
   })
   .superRefine((env, context) => {
     if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
@@ -75,6 +78,7 @@ export interface AppConfig {
   corsOrigins: string[];
   cookie: CookieConfig;
   trustProxy: number;
+  anthropic: { apiKey: string; model: string } | null;
   databaseUrl: string;
   jwtSecret: string;
   jwtRefreshSecret: string;
@@ -105,6 +109,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       secure: isProduction
     },
     trustProxy: env.TRUST_PROXY ?? (isProduction ? 1 : 0),
+    anthropic: env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY, model: env.ANTHROPIC_MODEL } : null,
     databaseUrl: env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
     jwtRefreshSecret: env.JWT_REFRESH_SECRET,

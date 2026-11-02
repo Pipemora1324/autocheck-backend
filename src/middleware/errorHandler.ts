@@ -10,7 +10,12 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
   if (error instanceof ZodError) {
     response.status(400).json({
       message: 'Los datos enviados no son válidos.',
-      errors: error.issues.map((issue) => ({ field: issue.path.join('.'), message: issue.message }))
+      errors: error.issues.flatMap((issue) =>
+        // Esquemas estrictos: cada campo desconocido se reporta por separado y en español.
+        issue.code === 'unrecognized_keys'
+          ? issue.keys.map((key) => ({ field: [...issue.path, key].join('.'), message: 'Este campo no está permitido.' }))
+          : [{ field: issue.path.join('.'), message: issue.message }]
+      )
     });
     return;
   }

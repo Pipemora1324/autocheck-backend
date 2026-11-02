@@ -1,8 +1,17 @@
 # AutoCheck-CO Backend
 
-API REST en Express 5 + TypeScript para consultar vehículos en Colombia y su informe de peritaje. Usa Postgres (Neon) y autenticación propia con JWT.
+API REST en Express 5 + TypeScript para AutoCheck-CO: registrar vehículos colombianos en un garaje personal, ver las vigencias de SOAT y RTM, obtener un concepto ("Sin alertas" / "Revisar" / "No recomendado") y consultar un informe de peritaje de demostración. Usa Postgres (Neon) y autenticación propia con JWT.
 
-> Los vehículos son **datos ficticios de demostración** (placas ABC-1234, DEF-5678 y GHI-9012). No hay integración real con el RUNT ni con aseguradoras.
+## Qué es real, qué es de demostración y qué depende de terceros
+
+| Parte | Estado |
+| --- | --- |
+| Cuentas, login, sesiones con refresh rotativo, verificación de correo, recuperación de contraseña, borrado de cuenta | **Real**: funciona contra Postgres; los correos requieren SMTP |
+| Garaje (`/garage`): vehículos que registra cada usuario, vigencias de SOAT/RTM y concepto | **Real**, pero calculado **solo con los datos que el usuario registra**. No es una consulta oficial (lo declara `basedOn`) |
+| Informe de peritaje (`/vehicles`): placas ABC-1234, DEF-5678 y GHI-9012 con inspecciones | **Demostración**: datos ficticios cargados por una migración |
+| Lectura de la tarjeta de propiedad (`POST /garage/scan-card`) | **Real**, con un **proveedor externo**: API de Anthropic. Apagada si no hay `ANTHROPIC_API_KEY` |
+| Consulta RUNT (`POST /garage/:plate/refresh-from-runt`) | **Proveedor externo**, apagada por defecto (`RUNT_PROVIDER=none`). El adaptador de Verifik es un **esqueleto** hasta confirmar su contrato. No hay scraping de RUNT |
+| Correo (verificación y recuperación) | **Proveedor externo** SMTP. Sin él, en desarrollo los enlaces salen por consola |
 
 ## Requisitos
 
@@ -18,43 +27,39 @@ npm run migrate        # crea las tablas y carga los datos de demostración
 npm run dev
 ```
 
-Las variables se validan al arrancar. Si falta alguna, el proceso termina indicando cuál. Ver `.env.example`.
+Las variables se validan al arrancar con zod; si falta o es inválida alguna, el proceso termina indicando cuál. Ver `.env.example`.
 
 ## Scripts
 
-| Comando                | Descripción                                          |
-| ---------------------- | ---------------------------------------------------- |
-| `npm run dev`          | Servidor en modo watch (`tsx`, lee `.env`)           |
-| `npm run build`        | Compila TypeScript a `dist/`                         |
-| `npm start`            | Ejecuta la build compilada                           |
-| `npm run migrate`      | Aplica las migraciones pendientes (lee `.env`)       |
-| `npm run migrate:down` | Revierte la última migración                         |
+| Comando                | Descripción                                           |
+| ---------------------- | ----------------------------------------------------- |
+| `npm run dev`          | Servidor en modo watch (`tsx`, lee `.env`)            |
+| `npm run build`        | Compila TypeScript a `dist/`                          |
+| `npm start`            | Ejecuta la build compilada                            |
+| `npm run typecheck`    | Verifica tipos de `src/` y de las pruebas             |
+| `npm run migrate`      | Aplica las migraciones pendientes (lee `.env`)        |
+| `npm run migrate:down` | Revierte la última migración                          |
 | `npm run migrate:prod` | Migraciones desde `dist/` (lo usa Render al arrancar) |
-| `npm test`             | Pruebas con el test runner de Node                   |
+| `npm test`             | Pruebas con el test runner de Node                    |
 
-Las pruebas usan repositorios en memoria y no necesitan base de datos. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
+Las pruebas usan repositorios en memoria, un lector de tarjetas y un proveedor RUNT simulados: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
 
 ## Endpoints
 
-Públicos:
+El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md](docs/API.md). En resumen:
 
-- `GET /health`
-- `POST /auth/register`: `{ email, password }` (mínimo 8 caracteres)
-- `POST /auth/login`: `{ email, password }`
-- `POST /auth/refresh`: rota el refresh token de la cookie httpOnly
-- `POST /auth/logout`
-- `POST /auth/forgot-password`: `{ email }`. Responde siempre lo mismo
-- `POST /auth/reset-password`: `{ token, password }`
+- **Públicos:** `GET /health`, `POST /auth/register` (exige `acceptedTerms: true`), `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/verify-email`, `/auth/resend-verification`.
+- **Con token:** `GET /auth/me`, `DELETE /auth/me`.
+- **Con token y correo verificado** (si no: `403 EMAIL_NOT_VERIFIED`):
+  - `GET/POST /garage`
+  - `GET/PATCH/DELETE /garage/:plate`
+  - `GET /garage/:plate/assessment`
+  - `GET /garage/capabilities`
+  - `POST /garage/scan-card`
+  - `POST /garage/:plate/refresh-from-runt`
+  - `/vehicles/*` (demostración; editar inspecciones exige rol `admin`)
 
-Requieren `Authorization: Bearer <accessToken>`:
-
-- `GET /auth/me`
-- `GET /vehicles`
-- `GET /vehicles/:plate`
-- `POST /vehicles/scan`: `{ plate, source?: 'manual' | 'image' }`
-- `PATCH /vehicles/:plate/inspections`: solo `admin`; `{ inspectionId, status, result, notes }`
-
-Los estados de RUNT, SOAT y RTM (`Vigente`, `Por Vencer` a 30 días o menos, `Vencido`) se calculan en cada consulta con la fecha actual de Colombia.
+Las vigencias (`Vigente`, `Por Vencer` a 30 días o menos, `Vencido`) se calculan en cada consulta con la fecha de hoy en Colombia (`America/Bogota`).
 
 ## Tratamiento de datos personales (Ley 1581 de 2012)
 
@@ -94,18 +99,21 @@ Los estados de RUNT, SOAT y RTM (`Vigente`, `Por Vencer` a 30 días o menos, `Ve
 
 ```
 migrations/          SQL versionado (node-pg-migrate)
+docs/API.md          Contrato HTTP para el frontend
 src/config/          Validación de variables de entorno (zod)
 src/db/              Pool de conexiones y runner de migraciones
 src/routes/          Definición de rutas
+src/domain/          Placas colombianas y firma de imágenes
+src/providers/       Proveedores externos de consulta RUNT (none, verifik)
 src/controllers/     Validación de entrada y respuesta HTTP
-src/services/        Reglas de negocio (auth, vehículos, correo)
+src/services/        Reglas de negocio (auth, garaje, concepto, lectura de tarjeta, correo)
 src/repositories/    Acceso a datos (Postgres)
 src/middleware/      Auth, roles, rate limit y manejo de errores
 ```
 
 ## Despliegue
 
-Ver [DEPLOY.md](DEPLOY.md) (Neon, Render y Vercel).
+Ver [DEPLOY.md](DEPLOY.md): Neon, Render, Vercel, SMTP, Anthropic, proveedor RUNT y la lista de pasos manuales pendientes.
 
 ## Frontend
 

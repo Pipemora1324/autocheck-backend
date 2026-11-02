@@ -3,6 +3,13 @@ import type { AppConfig } from '../config/env.js';
 
 export interface Mailer {
   sendPasswordReset(to: string, resetUrl: string): Promise<void>;
+  sendEmailVerification(to: string, verifyUrl: string): Promise<void>;
+}
+
+interface EmailContent {
+  subject: string;
+  text: string;
+  html: string;
 }
 
 const escapeHtml = (value: string) =>
@@ -41,6 +48,39 @@ export function passwordResetEmail(resetUrl: string): { subject: string; text: s
   return { subject, text, html };
 }
 
+export function emailVerificationEmail(verifyUrl: string): EmailContent {
+  const subject = 'Confirma tu correo en AutoCheck-CO';
+  const text = [
+    'Hola,',
+    '',
+    'Gracias por registrarte en AutoCheck-CO. Confirma tu correo para empezar a consultar y registrar vehículos:',
+    '',
+    verifyUrl,
+    '',
+    'El enlace vence en 24 horas y solo se puede usar una vez.',
+    'Si no creaste esta cuenta, ignora este correo.',
+    '',
+    'Equipo AutoCheck-CO'
+  ].join('\n');
+  const link = escapeHtml(verifyUrl);
+  const html = `<!doctype html>
+<html lang="es">
+  <body style="font-family: Arial, sans-serif; color: #1f2933; line-height: 1.5;">
+    <p>Hola,</p>
+    <p>Gracias por registrarte en <strong>AutoCheck-CO</strong>. Confirma tu correo para empezar a consultar y registrar vehículos.</p>
+    <p>
+      <a href="${link}" style="display: inline-block; padding: 10px 18px; background: #1d4ed8; color: #ffffff; text-decoration: none; border-radius: 6px;">
+        Confirmar correo
+      </a>
+    </p>
+    <p style="font-size: 14px;">El enlace vence en 24 horas y solo se puede usar una vez. Si el botón no funciona, copia esta dirección en tu navegador:<br>${link}</p>
+    <p style="font-size: 14px;">Si no creaste esta cuenta, ignora este correo.</p>
+    <p>Equipo AutoCheck-CO</p>
+  </body>
+</html>`;
+  return { subject, text, html };
+}
+
 class SmtpMailer implements Mailer {
   private readonly transporter;
 
@@ -56,17 +96,29 @@ class SmtpMailer implements Mailer {
   async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
     await this.transporter.sendMail({ from: this.smtp.from, to, ...passwordResetEmail(resetUrl) });
   }
+
+  async sendEmailVerification(to: string, verifyUrl: string): Promise<void> {
+    await this.transporter.sendMail({ from: this.smtp.from, to, ...emailVerificationEmail(verifyUrl) });
+  }
 }
 
 class ConsoleMailer implements Mailer {
   async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
     console.info(`[desarrollo] SMTP no configurado. Enlace de restablecimiento para ${to}: ${resetUrl}`);
   }
+
+  async sendEmailVerification(to: string, verifyUrl: string): Promise<void> {
+    console.info(`[desarrollo] SMTP no configurado. Enlace de verificación para ${to}: ${verifyUrl}`);
+  }
 }
 
 class DisabledMailer implements Mailer {
   async sendPasswordReset(): Promise<void> {
     console.warn('SMTP no configurado: no se envió el correo de restablecimiento de contraseña.');
+  }
+
+  async sendEmailVerification(): Promise<void> {
+    console.warn('SMTP no configurado: no se envió el correo de verificación.');
   }
 }
 

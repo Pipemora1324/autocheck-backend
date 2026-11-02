@@ -12,7 +12,9 @@ services:
     # Las migraciones corren antes de levantar el servidor; si fallan, el deploy no arranca.
     startCommand: npm run migrate:prod && npm start
     healthCheckPath: /health
+    # Solo las variables de la configuración recomendada (DEPLOY.md, paso 2). "sync: false" = la cargas tú en Render.
     envVars:
+      # --- Obligatorias ---
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
@@ -27,31 +29,34 @@ services:
         sync: false
       - key: APP_URL
         sync: false
+      # Correo por la API HTTPS de Brevo: Render gratuito bloquea los puertos SMTP.
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: AutoCheck-CO
       # El frontend llama a /api/* en Vercel, que reenvía a Render: el navegador ve /api/auth/...
       - key: COOKIE_PATH
         value: /api/auth
       - key: COOKIE_SAMESITE
         value: strict
-      # Vercel (rewrite) + balanceador de Render = 2 proxies delante de Express. Ver DEPLOY.md.
+      # Vercel (rewrite) + balanceador de Render = 2 proxies delante de Express.
       - key: TRUST_PROXY
         value: "2"
-      - key: SMTP_HOST
+      # --- Opcionales (pueden quedar vacías) ---
+      # Correos que reciben rol admin al verificar su correo, separados por coma.
+      - key: ADMIN_EMAILS
         sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
+      # Lectura de la tarjeta con Gemini (plan gratuito). Sin GEMINI_API_KEY, scan-card responde 503.
+      - key: SCAN_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
         sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: MAIL_FROM
-        sync: false
-      # Lectura de la tarjeta con visión. Vacía = /garage/scan-card responde 503.
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ANTHROPIC_MODEL
-        value: claude-opus-5-5
-      # Consulta RUNT: none (solo garaje manual) o verifik (requiere VERIFIK_API_KEY).
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      # Consulta RUNT desactivada: no requiere VERIFIK_API_KEY.
       - key: RUNT_PROVIDER
         value: none
-      - key: VERIFIK_API_KEY
-        sync: false

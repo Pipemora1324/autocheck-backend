@@ -3,14 +3,16 @@ import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import Anthropic from '@anthropic-ai/sdk';
 import { MAX_CARD_IMAGE_BYTES } from '../src/controllers/cardScanController.js';
 import { detectImageType } from '../src/domain/imageSignature.js';
+import { AnthropicCardScanner } from '../src/services/anthropicCardScanner.js';
 import {
-  AnthropicCardReader,
   CardReaderUnavailableError,
+  CardScannerBusyError,
   CardUnreadableError,
   type CardImage,
-  type CardReader,
+  type CardScanner,
   type RawCardExtraction
-} from '../src/services/cardReader.js';
+} from '../src/services/cardScanner.js';
+import { SCAN_PROVIDER_BUSY_MESSAGE } from '../src/services/cardScanService.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
@@ -36,7 +38,8 @@ const reading = (overrides: Partial<RawCardExtraction> = {}): RawCardExtraction 
   ...overrides
 });
 
-class FakeCardReader implements CardReader {
+export class FakeCardReader implements CardScanner {
+  readonly provider = 'gemini';
   readonly calls: Array<{ mediaType: string; bytes: number }> = [];
   next: RawCardExtraction | Error = reading();
 
@@ -159,6 +162,13 @@ describe('POST /garage/scan-card', () => {
     const unavailable = await scan(JPEG);
     assert.equal(unavailable.status, 503);
     assert.equal(unavailable.body.code, 'VISION_UNAVAILABLE');
+
+    reader.next = new CardScannerBusyError('x');
+    const busy = await scan(JPEG);
+    assert.equal(busy.status, 503);
+    assert.equal(busy.body.code, 'SCAN_PROVIDER_BUSY');
+    assert.equal(busy.body.message, SCAN_PROVIDER_BUSY_MESSAGE);
+    assert.match(busy.body.message, /intenta en un minuto o ingresa los datos a mano/i);
   });
 
   it('una placa leída con formato inválido queda vacía y genera un aviso', async () => {
@@ -222,7 +232,7 @@ describe('Rate limit de lectura de tarjetas (por usuario)', () => {
   });
 });
 
-describe('AnthropicCardReader (cliente simulado, sin llamar a la API)', () => {
+describe('AnthropicCardScanner (cliente simulado, sin llamar a la API)', () => {
   const image: CardImage = { data: Buffer.from(JPEG), mediaType: 'image/jpeg' };
   const fakeClient = (respond: (params: any) => unknown) => {
     const calls: any[] = [];
@@ -232,7 +242,7 @@ describe('AnthropicCardReader (cliente simulado, sin llamar a la API)', () => {
 
   it('envía la imagen en base64 con el modelo configurado, salida estructurada y fallback ante rechazos', async () => {
     const { client, calls } = fakeClient(() => ({ stop_reason: 'end_turn', parsed_output: reading() }));
-    const reader = new AnthropicCardReader({ apiKey: FAKE_KEY, model: 'modelo-de-prueba', client });
+    const reader = new AnthropicCardScanner({ apiKey: FAKE_KEY, model: 'modelo-de-prueba', client });
     const result = await reader.read(image);
     assert.equal(result.brand.value, 'RENAULT');
 
@@ -251,7 +261,7 @@ describe('AnthropicCardReader (cliente simulado, sin llamar a la API)', () => {
   it('un rechazo o una salida no válida se reportan como tarjeta ilegible', async () => {
     for (const response of [{ stop_reason: 'refusal', parsed_output: null }, { stop_reason: 'end_turn', parsed_output: null }, { stop_reason: 'max_tokens', parsed_output: null }]) {
       const { client } = fakeClient(() => response);
-      await assert.rejects(new AnthropicCardReader({ apiKey: FAKE_KEY, model: 'm', client }).read(image), CardUnreadableError);
+      await assert.rejects(new AnthropicCardScanner({ apiKey: FAKE_KEY, model: 'm', client }).read(image), CardUnreadableError);
     }
   });
 
@@ -261,12 +271,12 @@ describe('AnthropicCardReader (cliente simulado, sin llamar a la API)', () => {
     try {
       const cases: Array<[Error, new (...args: any[]) => Error]> = [
         [new Anthropic.AuthenticationError(401, {}, 'clave inválida', new Headers()), CardReaderUnavailableError],
-        [new Anthropic.RateLimitError(429, {}, 'límite', new Headers()), CardReaderUnavailableError],
+        [new Anthropic.RateLimitError(429, {}, 'límite', new Headers()), CardScannerBusyError],
         [new Anthropic.BadRequestError(400, {}, 'imagen inválida', new Headers()), CardUnreadableError]
       ];
       for (const [apiError, expected] of cases) {
         const { client } = fakeClient(() => { throw apiError; });
-        await assert.rejects(new AnthropicCardReader({ apiKey: FAKE_KEY, model: 'm', client }).read(image), expected);
+        await assert.rejects(new AnthropicCardScanner({ apiKey: FAKE_KEY, model: 'm', client }).read(image), expected);
       }
     } finally {
       console.error = quiet;

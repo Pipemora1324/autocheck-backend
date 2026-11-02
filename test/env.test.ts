@@ -31,7 +31,7 @@ describe('loadConfig', () => {
     assert.equal(config.appUrl, 'http://localhost:4200');
     assert.deepEqual(config.email, { provider: 'console' });
     assert.deepEqual(config.adminEmails, []);
-    assert.equal(config.anthropic, null);
+    assert.deepEqual(config.scan, { provider: 'none' });
   });
 
   it('explica qué variables faltan', () => {
@@ -61,8 +61,8 @@ describe('loadConfig', () => {
   });
 
   it('arranca con las variables opcionales vacías, como las deja Render', () => {
-    const config = loadConfig({ ...production, ANTHROPIC_API_KEY: '', VERIFIK_API_KEY: '', ADMIN_EMAILS: '', SMTP_HOST: '' });
-    assert.equal(config.anthropic, null);
+    const config = loadConfig({ ...production, SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: '', ANTHROPIC_API_KEY: '', VERIFIK_API_KEY: '', ADMIN_EMAILS: '', SMTP_HOST: '' });
+    assert.deepEqual(config.scan, { provider: 'none', missingKeyFor: 'gemini' });
     assert.deepEqual(config.runtProvider, { name: 'none' });
     assert.deepEqual(config.adminEmails, []);
   });
@@ -84,10 +84,16 @@ describe('loadConfig', () => {
     assert.throws(() => loadConfig({ ...valid, ADMIN_EMAILS: 'ana@example.com, no-es-correo' }), /ADMIN_EMAILS: Correo inválido "no-es-correo"/);
   });
 
-  it('ANTHROPIC_MODEL: claude-sonnet-5-5 por defecto y configurable', () => {
+  it('modelos de lectura: claude-sonnet-5-5 y gemini-3.5-flash-lite por defecto, y configurables', () => {
     const key = randomBytes(8).toString('hex');
-    assert.equal(loadConfig({ ...valid, ANTHROPIC_API_KEY: key }).anthropic?.model, 'claude-sonnet-5-5');
-    assert.equal(loadConfig({ ...valid, ANTHROPIC_API_KEY: key, ANTHROPIC_MODEL: 'claude-opus-5-5' }).anthropic?.model, 'claude-opus-5-5');
+    const model = (env: Record<string, string>) => {
+      const { scan } = loadConfig({ ...valid, ...env });
+      return scan.provider === 'none' ? null : scan.model;
+    };
+    assert.equal(model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key }), 'claude-sonnet-5-5');
+    assert.equal(model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key, ANTHROPIC_MODEL: 'claude-opus-5-5' }), 'claude-opus-5-5');
+    assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key }), 'gemini-3.5-flash-lite');
+    assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key, GEMINI_MODEL: 'gemini-3.8-flash' }), 'gemini-3.8-flash');
   });
 
   it('cookie y proxy: valores por defecto por entorno', () => {

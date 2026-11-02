@@ -51,7 +51,7 @@ describe('Proveedor RUNT desactivado (RUNT_PROVIDER=none)', () => {
 
   it('capabilities informa qué está activo', async () => {
     const response = await ctx.request('GET', '/garage/capabilities', { token });
-    assert.deepEqual(response.body, { cardScan: { enabled: false }, runtLookup: { enabled: false, provider: 'none' } });
+    assert.deepEqual(response.body, { cardScan: { enabled: false, provider: 'none', notice: null }, runtLookup: { enabled: false, provider: 'none' } });
   });
 
   it('refresh-from-runt responde 503 y el garaje manual sigue funcionando', async () => {

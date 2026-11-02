@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import { createApp, type AppDeps } from '../../src/app.js';
 import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
-import type { CardReader } from '../../src/services/cardReader.js';
+import type { CardScanner } from '../../src/services/cardScanner.js';
 import { CardScanService } from '../../src/services/cardScanService.js';
 import { NoVehicleLookupProvider, type VehicleLookupProvider } from '../../src/providers/VehicleLookupProvider.js';
 import { RuntLookupService } from '../../src/services/runtLookupService.js';
@@ -88,7 +88,7 @@ export interface TestAppOptions {
   rateLimits?: RateLimitOptions;
   config?: Partial<AppDeps['config']>;
   /** null simula un servidor sin ANTHROPIC_API_KEY. */
-  cardReader?: CardReader | null;
+  cardReader?: CardScanner | null;
   /** Por defecto RUNT_PROVIDER=none. */
   lookupProvider?: VehicleLookupProvider;
   /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */

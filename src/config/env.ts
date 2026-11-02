@@ -15,7 +15,17 @@ const envSchema = z
     SMTP_PORT: z.coerce.number().int().positive().default(587),
     SMTP_USER: optionalString,
     SMTP_PASS: optionalString,
-    MAIL_FROM: optionalString
+    MAIL_FROM: optionalString,
+    COOKIE_PATH: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().regex(/^\/[\w\-/]*$/, 'Debe ser una ruta que empiece por /, por ejemplo /api/auth').default('/auth')
+    ),
+    COOKIE_SAMESITE: z.preprocess(
+      (value) => (value === '' || value === undefined ? undefined : String(value).toLowerCase()),
+      z.enum(['strict', 'lax', 'none'], { error: 'Debe ser strict, lax o none' }).optional()
+    ),
+    // Cantidad de proxies delante de Express (ver DEPLOY.md, "Proxies y rate limit").
+    TRUST_PROXY: z.preprocess((value) => (value === '' ? undefined : value), z.coerce.number().int().min(0).max(5).optional())
   })
   .superRefine((env, context) => {
     if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
@@ -24,6 +34,16 @@ const envSchema = z
     if (env.NODE_ENV === 'production') {
       if (!env.CORS_ORIGIN) context.addIssue({ code: 'custom', path: ['CORS_ORIGIN'], message: 'Es obligatorio en producción' });
       if (!env.APP_URL) context.addIssue({ code: 'custom', path: ['APP_URL'], message: 'Es obligatorio en producción' });
+    }
+    // Con credentials, CORS exige orígenes exactos: '*' no está permitido.
+    for (const origin of (env.CORS_ORIGIN ?? '').split(',').map((item) => item.trim()).filter(Boolean)) {
+      if (!/^https?:\/\/[^/\s*]+$/.test(origin)) {
+        context.addIssue({ code: 'custom', path: ['CORS_ORIGIN'], message: `Origen inválido "${origin}": usa https://dominio sin / final ni comodines` });
+      }
+    }
+    // SameSite=None solo es aceptado por los navegadores junto con Secure, que solo se activa en producción.
+    if (env.COOKIE_SAMESITE === 'none' && env.NODE_ENV !== 'production') {
+      context.addIssue({ code: 'custom', path: ['COOKIE_SAMESITE'], message: 'none requiere cookies Secure (solo en producción)' });
     }
     const smtpFields = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM'] as const;
     const configured = smtpFields.filter((field) => env[field]);
@@ -42,11 +62,19 @@ export interface SmtpConfig {
   from: string;
 }
 
+export interface CookieConfig {
+  path: string;
+  sameSite: 'strict' | 'lax' | 'none';
+  secure: boolean;
+}
+
 export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
   isProduction: boolean;
   port: number;
   corsOrigins: string[];
+  cookie: CookieConfig;
+  trustProxy: number;
   databaseUrl: string;
   jwtSecret: string;
   jwtRefreshSecret: string;
@@ -65,11 +93,18 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
 
   const env = parsed.data;
   const devOrigin = 'http://localhost:4200';
+  const isProduction = env.NODE_ENV === 'production';
   return {
     nodeEnv: env.NODE_ENV,
-    isProduction: env.NODE_ENV === 'production',
+    isProduction,
     port: env.PORT,
     corsOrigins: (env.CORS_ORIGIN ?? devOrigin).split(',').map((origin) => origin.trim()).filter(Boolean),
+    cookie: {
+      path: env.COOKIE_PATH,
+      sameSite: env.COOKIE_SAMESITE ?? (isProduction ? 'strict' : 'lax'),
+      secure: isProduction
+    },
+    trustProxy: env.TRUST_PROXY ?? (isProduction ? 1 : 0),
     databaseUrl: env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
     jwtRefreshSecret: env.JWT_REFRESH_SECRET,

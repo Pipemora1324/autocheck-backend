@@ -11,7 +11,8 @@
     "migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
     "migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
     "migrate:prod": "node dist/db/migrate.js up",
-    "prebuild": "node -e \"require(\\\"node:fs\\\").rmSync(\\\"dist\\\",{recursive:true,force:true})\""
+    "prebuild": "node -e \"require(\\\"node:fs\\\").rmSync(\\\"dist\\\",{recursive:true,force:true})\"",
+    "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "argon2": "0.45.1",

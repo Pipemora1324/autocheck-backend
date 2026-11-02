@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { HttpError } from '../src/errors/httpError.js';
 import { VehicleService } from '../src/services/vehicleService.js';
-import { demoVehicles } from './support/fixtures.js';
+import { demoVehicles, newUser } from './support/fixtures.js';
 import { MemoryUserRepository, MemoryVehicleRepository } from './support/memoryRepositories.js';
 
 const NOW = new Date('2026-09-15T15:00:00Z');
@@ -53,7 +53,7 @@ describe('VehicleService', () => {
   });
 
   it('actualiza una inspección, registra quién la hizo y recalcula el estado general', async () => {
-    const admin = (await users.create('tecnico@example.com', 'hash'))!;
+    const admin = (await users.create(newUser('tecnico@example.com')))!;
     const vehicle = await service.updateInspection(
       'ABC-1234',
       { inspectionId: 'steering', status: 'Aprobado', result: 'Revisión completada', notes: 'Suspensión validada.' },

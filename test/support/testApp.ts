@@ -72,7 +72,8 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   resetPasswordMax: 1000,
   verifyEmailMax: 1000,
   resendVerificationMax: 1000,
-  resendVerificationEmailMax: 1000
+  resendVerificationEmailMax: 1000,
+  deleteAccountMax: 1000
 };
 
 export interface TestAppOptions {
@@ -104,6 +105,9 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   const mailer = new CapturingMailer();
   const tokens = new TokenService(TEST_ACCESS_SECRET, TEST_REFRESH_SECRET);
   const clock = { now: new Date() };
+  users.onDelete.push((userId) => {
+    for (const [id, row] of refreshTokens.tokens) if (row.userId === userId) refreshTokens.tokens.delete(id);
+  });
 
   const authService = new AuthService({
     users,
@@ -157,7 +161,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   };
 
   const register: TestContext['register'] = (email, clave = DEFAULT_CLAVE) =>
-    request('POST', '/auth/register', { body: { email, password: clave } });
+    request('POST', '/auth/register', { body: { email, password: clave, acceptedTerms: true } });
 
   return {
     users,

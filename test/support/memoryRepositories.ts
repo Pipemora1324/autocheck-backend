@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  NewUser,
   OneTimeTokenRepository,
   RefreshTokenRecord,
   RefreshTokenRepository,
@@ -20,9 +21,18 @@ export class MemoryUserRepository implements UserRepository {
     return this.users.get(id) ?? null;
   }
 
-  async create(email: string, passwordHash: string) {
+  async create({ email, passwordHash, termsAcceptedAt, termsVersion }: NewUser) {
     if (await this.findByEmail(email)) return null;
-    const user: UserRecord = { id: randomUUID(), email, passwordHash, role: 'user', emailVerifiedAt: null, createdAt: new Date().toISOString() };
+    const user: UserRecord = {
+      id: randomUUID(),
+      email,
+      passwordHash,
+      role: 'user',
+      emailVerifiedAt: null,
+      termsAcceptedAt: termsAcceptedAt.toISOString(),
+      termsVersion,
+      createdAt: new Date().toISOString()
+    };
     this.users.set(user.id, user);
     return user;
   }
@@ -36,6 +46,14 @@ export class MemoryUserRepository implements UserRepository {
     const user = this.users.get(id);
     if (user && !user.emailVerifiedAt) user.emailVerifiedAt = at.toISOString();
   }
+
+  async delete(id: string) {
+    this.users.delete(id);
+    for (const listener of this.onDelete) listener(id);
+  }
+
+  /** Simula el ON DELETE CASCADE de la base en los demás repositorios en memoria. */
+  readonly onDelete: Array<(userId: string) => void> = [];
 
   setRole(email: string, role: UserRole) {
     const user = [...this.users.values()].find((item) => item.email === email);

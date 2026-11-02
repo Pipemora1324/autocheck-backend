@@ -8,6 +8,12 @@ import type {
   UserRepository,
   UserRole
 } from '../../src/repositories/authRepositories.js';
+import type {
+  GarageRepository,
+  GarageVehiclePatch,
+  GarageVehicleRecord,
+  NewGarageVehicle
+} from '../../src/repositories/garageRepository.js';
 import type { InspectionChange, VehicleRecord, VehicleRepository } from '../../src/repositories/vehicleRepository.js';
 
 export class MemoryUserRepository implements UserRepository {
@@ -143,5 +149,49 @@ export class MemoryVehicleRepository implements VehicleRepository {
     Object.assign(inspection, change, { updatedByEmail: (await this.users.findById(userId))?.email ?? null, updatedAt: now });
     vehicle.updatedAt = now;
     return true;
+  }
+}
+
+export class MemoryGarageRepository implements GarageRepository {
+  readonly vehicles: GarageVehicleRecord[] = [];
+
+  async list(userId: string) {
+    return this.vehicles.filter((item) => item.userId === userId).sort((a, b) => a.plate.localeCompare(b.plate)).map((item) => ({ ...item }));
+  }
+
+  async find(userId: string, plate: string) {
+    const found = this.vehicles.find((item) => item.userId === userId && item.plate === plate);
+    return found ? { ...found } : null;
+  }
+
+  async count(userId: string) {
+    return this.vehicles.filter((item) => item.userId === userId).length;
+  }
+
+  async create(userId: string, vehicle: NewGarageVehicle) {
+    if (this.vehicles.some((item) => item.userId === userId && item.plate === vehicle.plate)) return null;
+    const now = new Date().toISOString();
+    const record: GarageVehicleRecord = { ...vehicle, id: randomUUID(), userId, createdAt: now, updatedAt: now };
+    this.vehicles.push(record);
+    return { ...record };
+  }
+
+  async update(userId: string, plate: string, patch: GarageVehiclePatch) {
+    const found = this.vehicles.find((item) => item.userId === userId && item.plate === plate);
+    if (!found) return null;
+    for (const [key, value] of Object.entries(patch)) if (value !== undefined) Object.assign(found, { [key]: value });
+    found.updatedAt = new Date().toISOString();
+    return { ...found };
+  }
+
+  async delete(userId: string, plate: string) {
+    const index = this.vehicles.findIndex((item) => item.userId === userId && item.plate === plate);
+    if (index < 0) return false;
+    this.vehicles.splice(index, 1);
+    return true;
+  }
+
+  deleteAllFor(userId: string) {
+    for (let index = this.vehicles.length - 1; index >= 0; index--) if (this.vehicles[index]!.userId === userId) this.vehicles.splice(index, 1);
   }
 }

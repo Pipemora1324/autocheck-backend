@@ -4,12 +4,14 @@ import type { Server } from 'node:http';
 import { createApp, type AppDeps } from '../../src/app.js';
 import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
+import { GarageService } from '../../src/services/garageService.js';
 import type { Mailer } from '../../src/services/mailer.js';
 import { Argon2PasswordHasher } from '../../src/services/passwordHasher.js';
 import { TokenService } from '../../src/services/tokenService.js';
 import { VehicleService } from '../../src/services/vehicleService.js';
 import { demoVehicles } from './fixtures.js';
 import {
+  MemoryGarageRepository,
   MemoryOneTimeTokenRepository,
   MemoryRefreshTokenRepository,
   MemoryUserRepository,
@@ -86,6 +88,7 @@ export interface TestContext {
   resetTokens: MemoryOneTimeTokenRepository;
   verificationTokens: MemoryOneTimeTokenRepository;
   refreshTokens: MemoryRefreshTokenRepository;
+  garage: MemoryGarageRepository;
   mailer: CapturingMailer;
   tokens: TokenService;
   clock: { now: Date };
@@ -102,10 +105,12 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   const resetTokens = new MemoryOneTimeTokenRepository();
   const verificationTokens = new MemoryOneTimeTokenRepository();
   const refreshTokens = new MemoryRefreshTokenRepository();
+  const garage = new MemoryGarageRepository();
   const mailer = new CapturingMailer();
   const tokens = new TokenService(TEST_ACCESS_SECRET, TEST_REFRESH_SECRET);
   const clock = { now: new Date() };
   users.onDelete.push((userId) => {
+    garage.deleteAllFor(userId);
     for (const [id, row] of refreshTokens.tokens) if (row.userId === userId) refreshTokens.tokens.delete(id);
   });
 
@@ -120,6 +125,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     appUrl: 'http://localhost:4200',
     now: () => clock.now
   });
+  const garageService = new GarageService(garage, () => clock.now);
   const vehicleService = new VehicleService(new MemoryVehicleRepository(demoVehicles(), users), () => new Date('2026-09-15T15:00:00Z'));
 
   const app = createApp({
@@ -133,6 +139,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     },
     authService,
     vehicleService,
+    garageService,
     tokenService: tokens,
     users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }
@@ -168,6 +175,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     resetTokens,
     verificationTokens,
     refreshTokens,
+    garage,
     mailer,
     tokens,
     clock,

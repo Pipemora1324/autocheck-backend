@@ -9,6 +9,7 @@ import {
   PgRefreshTokenRepository,
   PgUserRepository
 } from '../src/repositories/pgAuthRepositories.js';
+import { PgGarageRepository } from '../src/repositories/pgGarageRepository.js';
 import { PgVehicleRepository } from '../src/repositories/pgVehicleRepository.js';
 import { hashResetToken } from '../src/services/authService.js';
 import { VehicleService } from '../src/services/vehicleService.js';
@@ -121,5 +122,35 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     );
     assert.deepEqual(rows[0], { refresh: 0, reset: 0, verif: 0 });
     assert.equal(await users.findById(user.id), null);
+  });
+  it('garaje: placa única por usuario, edición parcial y borrado en cascada con el usuario', async () => {
+    const users = new PgUserRepository(pool);
+    const garage = new PgGarageRepository(pool);
+    const owner = (await users.create(newUser('garaje-pg@example.com')))!;
+    const other = (await users.create(newUser('garaje-otro-pg@example.com')))!;
+    const base = {
+      plate: 'ABC-123', brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: 1598, chassis: null,
+      fuelType: 'Gasolina' as const, serviceType: 'Particular' as const, soatExpiresOn: '2027-06-30', rtmExpiresOn: null,
+      runtStatus: null, source: 'manual' as const
+    };
+
+    const created = (await garage.create(owner.id, base))!;
+    assert.equal(created.soatExpiresOn, '2027-06-30');
+    assert.equal(await garage.create(owner.id, base), null);
+    assert.ok(await garage.create(other.id, base));
+    await assert.rejects(garage.create(owner.id, { ...base, plate: 'ABC-1234' }), /user_vehicles_plate_format/);
+
+    const updated = (await garage.update(owner.id, 'ABC-123', { color: 'Rojo', cylinderCc: null }))!;
+    assert.equal(updated.color, 'Rojo');
+    assert.equal(updated.cylinderCc, null);
+    assert.equal(updated.model, 'Sandero');
+    assert.ok(updated.updatedAt >= created.updatedAt);
+    assert.equal(await garage.update(other.id, 'XYZ-999', { color: 'Azul' }), null);
+    assert.equal((await garage.find(other.id, 'ABC-123'))!.color, null);
+
+    assert.equal(await garage.count(owner.id), 1);
+    await users.delete(owner.id);
+    assert.equal(await garage.count(owner.id), 0);
+    assert.equal(await garage.count(other.id), 1);
   });
 });

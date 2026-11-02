@@ -32,9 +32,7 @@ function start(): void {
     throw error;
   }
 
-  if (config.isProduction && !config.smtp) {
-    console.warn('SMTP no configurado: no se enviarán correos de verificación ni de recuperación hasta definir SMTP_*.');
-  }
+  console.log(`Correo: proveedor ${config.email.provider}.`);
 
   const pool = createPool(config.databaseUrl);
   const tokenService = new TokenService(config.jwtSecret, config.jwtRefreshSecret);

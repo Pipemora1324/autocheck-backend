@@ -1,5 +1,5 @@
-import nodemailer from 'nodemailer';
 import type { AppConfig } from '../config/env.js';
+import { BrevoEmailSender, ConsoleEmailSender, SmtpEmailSender, type EmailSender } from './emailSender.js';
 
 export interface Mailer {
   sendPasswordReset(to: string, resetUrl: string): Promise<void>;
@@ -15,7 +15,7 @@ interface EmailContent {
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 
-export function passwordResetEmail(resetUrl: string): { subject: string; text: string; html: string } {
+export function passwordResetEmail(resetUrl: string): EmailContent {
   const subject = 'Restablece tu contraseña de AutoCheck-CO';
   const text = [
     'Hola,',
@@ -81,49 +81,28 @@ export function emailVerificationEmail(verifyUrl: string): EmailContent {
   return { subject, text, html };
 }
 
-class SmtpMailer implements Mailer {
-  private readonly transporter;
-
-  constructor(private readonly smtp: NonNullable<AppConfig['smtp']>) {
-    this.transporter = nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.port === 465,
-      auth: { user: smtp.user, pass: smtp.pass }
-    });
-  }
+/** Arma los correos en español y delega el envío en el proveedor configurado (Brevo, SMTP o consola). */
+export class TemplatedMailer implements Mailer {
+  constructor(private readonly sender: EmailSender) {}
 
   async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
-    await this.transporter.sendMail({ from: this.smtp.from, to, ...passwordResetEmail(resetUrl) });
+    await this.sender.send({ to, ...passwordResetEmail(resetUrl) });
   }
 
   async sendEmailVerification(to: string, verifyUrl: string): Promise<void> {
-    await this.transporter.sendMail({ from: this.smtp.from, to, ...emailVerificationEmail(verifyUrl) });
+    await this.sender.send({ to, ...emailVerificationEmail(verifyUrl) });
   }
 }
 
-class ConsoleMailer implements Mailer {
-  async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
-    console.info(`[desarrollo] SMTP no configurado. Enlace de restablecimiento para ${to}: ${resetUrl}`);
-  }
-
-  async sendEmailVerification(to: string, verifyUrl: string): Promise<void> {
-    console.info(`[desarrollo] SMTP no configurado. Enlace de verificación para ${to}: ${verifyUrl}`);
-  }
+export function createEmailSender(config: Pick<AppConfig, 'email' | 'isProduction'>): EmailSender {
+  const { email } = config;
+  if (email.provider === 'brevo') return new BrevoEmailSender(email.apiKey, email.from);
+  if (email.provider === 'smtp') return new SmtpEmailSender(email, email.from);
+  // La consola imprime enlaces con tokens válidos: nunca en producción (env.ts ya lo rechaza al arrancar).
+  if (config.isProduction) throw new Error('EMAIL_PROVIDER=console no está permitido en producción.');
+  return new ConsoleEmailSender();
 }
 
-class DisabledMailer implements Mailer {
-  async sendPasswordReset(): Promise<void> {
-    console.warn('SMTP no configurado: no se envió el correo de restablecimiento de contraseña.');
-  }
-
-  async sendEmailVerification(): Promise<void> {
-    console.warn('SMTP no configurado: no se envió el correo de verificación.');
-  }
-}
-
-export function createMailer(config: AppConfig): Mailer {
-  if (config.smtp) return new SmtpMailer(config.smtp);
-  // El enlace nunca se imprime en producción: contiene un token válido.
-  return config.isProduction ? new DisabledMailer() : new ConsoleMailer();
+export function createMailer(config: Pick<AppConfig, 'email' | 'isProduction'>): Mailer {
+  return new TemplatedMailer(createEmailSender(config));
 }

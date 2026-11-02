@@ -67,6 +67,10 @@ export class PgUserRepository implements UserRepository {
     await this.pool.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE id = $1', [id, at]);
   }
 
+  async updateRole(id: string, role: UserRole): Promise<void> {
+    await this.pool.query('UPDATE users SET role = $2 WHERE id = $1', [id, role]);
+  }
+
   async delete(id: string): Promise<void> {
     await this.pool.query('DELETE FROM users WHERE id = $1', [id]);
   }

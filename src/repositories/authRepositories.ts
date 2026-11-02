@@ -26,6 +26,7 @@ export interface UserRepository {
   updatePassword(id: string, passwordHash: string): Promise<void>;
   /** Marca el correo como verificado; si ya lo estaba, conserva la fecha original. */
   markEmailVerified(id: string, at: Date): Promise<void>;
+  updateRole(id: string, role: UserRole): Promise<void>;
   /** Borra la cuenta; sesiones, tokens y vehículos del garaje se eliminan en cascada. */
   delete(id: string): Promise<void>;
 }

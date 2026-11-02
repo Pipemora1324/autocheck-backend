@@ -10,8 +10,8 @@ describe('Middleware de autenticación y roles', () => {
 
   before(async () => {
     ctx = await startTestApp();
-    userToken = (await ctx.register('usuario@example.com')).body.accessToken;
-    await ctx.register('admin@example.com');
+    userToken = await ctx.registerVerified('usuario@example.com');
+    await ctx.registerVerified('admin@example.com');
     ctx.users.setRole('admin@example.com', 'admin');
     adminToken = (await ctx.login('admin@example.com', DEFAULT_CLAVE)).body.accessToken;
   });

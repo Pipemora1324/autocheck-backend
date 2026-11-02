@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
-  PasswordResetTokenRepository,
+  OneTimeTokenRepository,
   RefreshTokenRecord,
   RefreshTokenRepository,
   UserRecord,
@@ -22,7 +22,7 @@ export class MemoryUserRepository implements UserRepository {
 
   async create(email: string, passwordHash: string) {
     if (await this.findByEmail(email)) return null;
-    const user: UserRecord = { id: randomUUID(), email, passwordHash, role: 'user', createdAt: new Date().toISOString() };
+    const user: UserRecord = { id: randomUUID(), email, passwordHash, role: 'user', emailVerifiedAt: null, createdAt: new Date().toISOString() };
     this.users.set(user.id, user);
     return user;
   }
@@ -30,6 +30,11 @@ export class MemoryUserRepository implements UserRepository {
   async updatePassword(id: string, passwordHash: string) {
     const user = this.users.get(id);
     if (user) user.passwordHash = passwordHash;
+  }
+
+  async markEmailVerified(id: string, at: Date) {
+    const user = this.users.get(id);
+    if (user && !user.emailVerifiedAt) user.emailVerifiedAt = at.toISOString();
   }
 
   setRole(email: string, role: UserRole) {
@@ -45,7 +50,7 @@ interface ResetTokenRow {
   usedAt: Date | null;
 }
 
-export class MemoryPasswordResetTokenRepository implements PasswordResetTokenRepository {
+export class MemoryOneTimeTokenRepository implements OneTimeTokenRepository {
   readonly tokens: ResetTokenRow[] = [];
 
   async create(userId: string, tokenHash: string, expiresAt: Date) {
@@ -61,6 +66,9 @@ export class MemoryPasswordResetTokenRepository implements PasswordResetTokenRep
     return token.userId;
   }
 }
+
+export const MemoryPasswordResetTokenRepository = MemoryOneTimeTokenRepository;
+export type MemoryPasswordResetTokenRepository = MemoryOneTimeTokenRepository;
 
 interface RefreshTokenRow extends RefreshTokenRecord {
   expiresAt: Date;

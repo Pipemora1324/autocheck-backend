@@ -3,7 +3,12 @@ import { after, before, describe, it } from 'node:test';
 import type pg from 'pg';
 import { runMigrations } from '../src/db/migrate.js';
 import { createPool } from '../src/db/pool.js';
-import { PgPasswordResetTokenRepository, PgRefreshTokenRepository, PgUserRepository } from '../src/repositories/pgAuthRepositories.js';
+import {
+  PgEmailVerificationTokenRepository,
+  PgPasswordResetTokenRepository,
+  PgRefreshTokenRepository,
+  PgUserRepository
+} from '../src/repositories/pgAuthRepositories.js';
 import { PgVehicleRepository } from '../src/repositories/pgVehicleRepository.js';
 import { hashResetToken } from '../src/services/authService.js';
 import { VehicleService } from '../src/services/vehicleService.js';
@@ -81,5 +86,21 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.equal(await repo.revokeIfActive(first.id, now), null);
     await repo.revokeFamily(familyId, now);
     assert.equal(await repo.revokeIfActive(second.id, now), null);
+  });
+  it('verificación de correo: token de un solo uso y fecha que no se sobrescribe', async () => {
+    const users = new PgUserRepository(pool);
+    const user = (await users.create('verifica-pg@example.com', 'hash'))!;
+    assert.equal(user.emailVerifiedAt, null);
+
+    const tokens = new PgEmailVerificationTokenRepository(pool);
+    const now = new Date();
+    await tokens.create(user.id, hashResetToken('verif-a'), new Date(now.getTime() + 60_000));
+    assert.equal(await tokens.consume(hashResetToken('verif-a'), now), user.id);
+    assert.equal(await tokens.consume(hashResetToken('verif-a'), now), null);
+
+    const first = new Date('2026-11-01T10:00:00Z');
+    await users.markEmailVerified(user.id, first);
+    await users.markEmailVerified(user.id, new Date('2026-11-02T10:00:00Z'));
+    assert.equal((await users.findById(user.id))!.emailVerifiedAt, first.toISOString());
   });
 });

@@ -10,7 +10,7 @@ import { TokenService } from '../../src/services/tokenService.js';
 import { VehicleService } from '../../src/services/vehicleService.js';
 import { demoVehicles } from './fixtures.js';
 import {
-  MemoryPasswordResetTokenRepository,
+  MemoryOneTimeTokenRepository,
   MemoryRefreshTokenRepository,
   MemoryUserRepository,
   MemoryVehicleRepository
@@ -21,17 +21,30 @@ export const TEST_ACCESS_SECRET = randomBytes(32).toString('hex');
 export const TEST_REFRESH_SECRET = randomBytes(32).toString('hex');
 export const DEFAULT_CLAVE = 'contraseña-segura';
 
+const tokenFrom = (url: string | undefined) => {
+  if (!url) throw new Error('No se envió ningún correo');
+  return new URL(url).searchParams.get('token')!;
+};
+
 export class CapturingMailer implements Mailer {
   readonly sent: Array<{ to: string; resetUrl: string }> = [];
+  readonly verifications: Array<{ to: string; verifyUrl: string }> = [];
 
   async sendPasswordReset(to: string, resetUrl: string) {
     this.sent.push({ to, resetUrl });
   }
 
+  async sendEmailVerification(to: string, verifyUrl: string) {
+    this.verifications.push({ to, verifyUrl });
+  }
+
   lastToken(): string {
-    const last = this.sent.at(-1);
-    if (!last) throw new Error('No se envió ningún correo');
-    return new URL(last.resetUrl).searchParams.get('token')!;
+    return tokenFrom(this.sent.at(-1)?.resetUrl);
+  }
+
+  lastVerificationToken(to?: string): string {
+    const matching = to ? this.verifications.filter((item) => item.to === to) : this.verifications;
+    return tokenFrom(matching.at(-1)?.verifyUrl);
   }
 }
 
@@ -56,7 +69,10 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   loginEmailMax: 1000,
   forgotPasswordMax: 1000,
   forgotPasswordEmailMax: 1000,
-  resetPasswordMax: 1000
+  resetPasswordMax: 1000,
+  verifyEmailMax: 1000,
+  resendVerificationMax: 1000,
+  resendVerificationEmailMax: 1000
 };
 
 export interface TestAppOptions {
@@ -66,20 +82,24 @@ export interface TestAppOptions {
 
 export interface TestContext {
   users: MemoryUserRepository;
-  resetTokens: MemoryPasswordResetTokenRepository;
+  resetTokens: MemoryOneTimeTokenRepository;
+  verificationTokens: MemoryOneTimeTokenRepository;
   refreshTokens: MemoryRefreshTokenRepository;
   mailer: CapturingMailer;
   tokens: TokenService;
   clock: { now: Date };
   request(method: string, path: string, options?: RequestOptions): Promise<TestResponse>;
   register(email: string, clave?: string): Promise<TestResponse>;
+  /** Registra, confirma el correo con el enlace enviado y devuelve el access token. */
+  registerVerified(email: string, clave?: string): Promise<string>;
   login(email: string, clave: string): Promise<TestResponse>;
   close(): Promise<void>;
 }
 
 export async function startTestApp(options: TestAppOptions = {}): Promise<TestContext> {
   const users = new MemoryUserRepository();
-  const resetTokens = new MemoryPasswordResetTokenRepository();
+  const resetTokens = new MemoryOneTimeTokenRepository();
+  const verificationTokens = new MemoryOneTimeTokenRepository();
   const refreshTokens = new MemoryRefreshTokenRepository();
   const mailer = new CapturingMailer();
   const tokens = new TokenService(TEST_ACCESS_SECRET, TEST_REFRESH_SECRET);
@@ -88,6 +108,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   const authService = new AuthService({
     users,
     resetTokens,
+    verificationTokens,
     refreshTokens,
     hasher: new Argon2PasswordHasher(),
     tokens,
@@ -109,6 +130,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     authService,
     vehicleService,
     tokenService: tokens,
+    users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }
   });
 
@@ -134,15 +156,26 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     };
   };
 
+  const register: TestContext['register'] = (email, clave = DEFAULT_CLAVE) =>
+    request('POST', '/auth/register', { body: { email, password: clave } });
+
   return {
     users,
     resetTokens,
+    verificationTokens,
     refreshTokens,
     mailer,
     tokens,
     clock,
     request,
-    register: (email, clave = DEFAULT_CLAVE) => request('POST', '/auth/register', { body: { email, password: clave } }),
+    register,
+    async registerVerified(email, clave = DEFAULT_CLAVE) {
+      const registered = await register(email, clave);
+      if (registered.status !== 201) throw new Error(`Registro falló (${registered.status}): ${JSON.stringify(registered.body)}`);
+      const verified = await request('POST', '/auth/verify-email', { body: { token: mailer.lastVerificationToken(registered.body.user.email) } });
+      if (verified.status !== 200) throw new Error(`Verificación falló (${verified.status})`);
+      return registered.body.accessToken as string;
+    },
     login: (email, clave) => request('POST', '/auth/login', { body: { email, password: clave } }),
     close: () => new Promise((resolve) => server.close(() => resolve()))
   };

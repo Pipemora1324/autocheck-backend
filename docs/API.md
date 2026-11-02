@@ -2,6 +2,8 @@
 
 Contrato HTTP del backend para el frontend. Todas las respuestas son JSON en español.
 
+> **El flujo real es `/garage`.** `/vehicles` y sus 3 placas (`ABC-1234`, `DEF-5678`, `GHI-9012`) son **solo de demostración**: datos ficticios para mostrar el informe de peritaje. No los uses para datos de usuarios.
+
 - **Base URL**
   - Producción: `https://<proyecto>.vercel.app/api` (Vercel reenvía `/api/*` al backend en Render).
   - Desarrollo: `http://localhost:3000`.
@@ -43,12 +45,33 @@ Validación (400):
 | 429 | `RATE_LIMITED` / — | Límite de intentos (ver tabla al final) |
 | 501 | `RUNT_PROVIDER_NOT_IMPLEMENTED` | Proveedor RUNT configurado pero sin implementar |
 | 503 | `VISION_NOT_CONFIGURED`, `VISION_UNAVAILABLE`, `RUNT_PROVIDER_DISABLED`, `RUNT_UNAVAILABLE` | Servicio opcional apagado o caído |
+| 503 | `SCAN_PROVIDER_BUSY` | El proveedor gratuito de lectura está saturado (429). Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece ingresar los datos a mano |
 
 ---
 
-## Salud
+## Salud y configuración pública
 
 `GET /health` (público): `{ "status": "ok", "service": "AutoCheck-CO" }`.
+
+`GET /config/public` (público, sin token). Úsalo para mostrar el consentimiento del registro y el aviso antes de subir la foto de la tarjeta:
+
+```json
+{
+  "privacyPolicy": {
+    "version": "2026-11-02.2",
+    "registrationConsent": "Autorizo a AutoCheck-CO a tratar mis datos personales ... No subiré la tarjeta de otra persona sin su autorización."
+  },
+  "cardScan": {
+    "enabled": true,
+    "provider": "gemini",
+    "notice": "La foto de la tarjeta se envía a Google (Gemini API, plan gratuito) solo para extraer los datos; ... En el plan gratuito, Google puede usar el contenido enviado para mejorar sus productos. ..."
+  },
+  "runtLookup": { "enabled": false, "provider": "none" }
+}
+```
+
+- **`cardScan.provider`:** `gemini`, `anthropic` o `none`.
+- **`cardScan.notice`:** es `null` si la lectura está apagada.
 
 ## Autenticación (`/auth`)
 
@@ -58,7 +81,7 @@ Validación (400):
 { "email": "ana@example.com", "password": "tu contraseña", "acceptedTerms": true }
 ```
 
-- **Validación:** `acceptedTerms` debe ser exactamente `true`; el backend guarda la fecha y la versión de la política. `password` debe tener entre 8 y 128 caracteres.
+- **Validación:** `acceptedTerms` debe ser exactamente `true`. Muestra junto a la casilla el texto `privacyPolicy.registrationConsent` de `GET /config/public`. El backend guarda la fecha y la versión de la política. `password` debe tener entre 8 y 128 caracteres.
 - **Al registrarse:** se envía el correo con `APP_URL/verify-email?token=...`.
 - **Respuesta:** `201`, con la cookie de refresh y el siguiente cuerpo (igual en `login` y `refresh`):
 
@@ -197,7 +220,7 @@ Placas colombianas: `ABC-123` (carro) o `ABC-12D` (moto). Se aceptan en minúscu
 | `PATCH /garage/:plate` | Solo los campos a cambiar (`null` borra un dato opcional; la placa no se edita) | Vehículo |
 | `DELETE /garage/:plate` | — | `204` |
 | `GET /garage/:plate/assessment` | — | Concepto (abajo) |
-| `GET /garage/capabilities` | — | `{ "cardScan": { "enabled": bool }, "runtLookup": { "enabled": bool, "provider": "none" \| "verifik" } }` |
+| `GET /garage/capabilities` | — | `{ "cardScan": { "enabled": bool, "provider": "gemini" \| "anthropic" \| "none", "notice": string \| null }, "runtLookup": { "enabled": bool, "provider": "none" \| "verifik" } }` (igual que en `/config/public`) |
 
 **Reglas de los campos:**
 
@@ -239,7 +262,7 @@ Muestra siempre `basedOn.disclaimer`.
 
 ### `POST /garage/scan-card`
 
-Lee la tarjeta de propiedad (licencia de tránsito) con visión.
+Lee la tarjeta de propiedad (licencia de tránsito) con visión, usando el proveedor de `cardScan.provider` (Gemini o Anthropic). Antes de subir la foto, muestra `cardScan.notice`.
 
 - **Petición:** `multipart/form-data` con un solo archivo en el campo `image`.
   - **Formato:** JPEG, PNG o WEBP, de máximo 5 MB.
@@ -274,7 +297,7 @@ Lee la tarjeta de propiedad (licencia de tránsito) con visión.
 
 **Confirmación:** el usuario revisa los datos y los confirma con `POST /garage` y `"source": "scan"`.
 
-**Errores:** `415`, `413`, `422` y `503`, según la tabla de errores.
+**Errores:** `415`, `413`, `422` y `503`, según la tabla de errores. Ante `503 SCAN_PROVIDER_BUSY`, muestra el mensaje y deja ingresar los datos a mano.
 
 ### `POST /garage/:plate/refresh-from-runt`
 
@@ -312,7 +335,7 @@ Actualiza un vehículo del garaje con datos del proveedor RUNT.
 
 ## Vehículos de demostración (`/vehicles`): token y correo verificado
 
-Datos **ficticios** con placas de formato antiguo (`ABC-1234`, `DEF-5678`, `GHI-9012`), útiles para mostrar el informe de peritaje.
+> **Solo demostración.** Datos **ficticios** con placas de formato antiguo (`ABC-1234`, `DEF-5678`, `GHI-9012`), cargados por una migración para mostrar el informe de peritaje. No representan vehículos reales ni se conectan con el garaje. El flujo real es `/garage`. Se eliminarán en una versión futura.
 
 | Método y ruta | Notas |
 | --- | --- |

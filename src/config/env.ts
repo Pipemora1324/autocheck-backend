@@ -36,7 +36,14 @@ const envSchema = z
     ),
     // Cantidad de proxies delante de Express (ver DEPLOY.md, "Proxies y rate limit").
     TRUST_PROXY: z.preprocess((value) => (value === '' ? undefined : value), z.coerce.number().int().min(0).max(5).optional()),
-    // Lectura de la tarjeta de propiedad con visión. Sin clave, POST /garage/scan-card responde 503.
+    // Lectura de la tarjeta de propiedad con visión: gemini (plan gratuito), anthropic o none.
+    // Sin proveedor o sin su clave, POST /garage/scan-card responde 503.
+    SCAN_PROVIDER: z.preprocess(
+      (value) => (value === '' || value === undefined ? undefined : String(value).toLowerCase()),
+      z.enum(['gemini', 'anthropic', 'none'], { error: 'Debe ser gemini, anthropic o none' }).default('none')
+    ),
+    GEMINI_API_KEY: optionalString,
+    GEMINI_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('gemini-3.5-flash-lite')),
     ANTHROPIC_API_KEY: optionalString,
     ANTHROPIC_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('claude-sonnet-5-5')),
     // Consulta RUNT por proveedor externo. none (por defecto) = solo garaje manual.
@@ -102,6 +109,11 @@ export interface MailFrom {
   name: string;
 }
 
+export type ScanConfig =
+  | { provider: 'gemini' | 'anthropic'; apiKey: string; model: string }
+  /** missingKeyFor: el proveedor pedido en SCAN_PROVIDER cuya clave falta (para avisar al arrancar). */
+  | { provider: 'none'; missingKeyFor?: 'gemini' | 'anthropic' };
+
 export type EmailConfig =
   | { provider: 'brevo'; apiKey: string; from: MailFrom }
   | { provider: 'smtp'; host: string; port: number; user: string; pass: string; from: MailFrom }
@@ -120,7 +132,7 @@ export interface AppConfig {
   corsOrigins: string[];
   cookie: CookieConfig;
   trustProxy: number;
-  anthropic: { apiKey: string; model: string } | null;
+  scan: ScanConfig;
   runtProvider: { name: 'none' } | { name: 'verifik'; apiKey: string };
   databaseUrl: string;
   jwtSecret: string;
@@ -153,7 +165,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       secure: isProduction
     },
     trustProxy: env.TRUST_PROXY ?? (isProduction ? 1 : 0),
-    anthropic: env.ANTHROPIC_API_KEY ? { apiKey: env.ANTHROPIC_API_KEY, model: env.ANTHROPIC_MODEL } : null,
+    scan: toScanConfig(env),
     runtProvider: env.RUNT_PROVIDER === 'verifik' && env.VERIFIK_API_KEY ? { name: 'verifik', apiKey: env.VERIFIK_API_KEY } : { name: 'none' },
     databaseUrl: env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
@@ -162,6 +174,18 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     email: toEmailConfig(env),
     adminEmails: splitList(env.ADMIN_EMAILS)
   };
+}
+
+function toScanConfig(env: z.infer<typeof envSchema>): ScanConfig {
+  if (env.SCAN_PROVIDER === 'gemini') {
+    return env.GEMINI_API_KEY ? { provider: 'gemini', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : { provider: 'none', missingKeyFor: 'gemini' };
+  }
+  if (env.SCAN_PROVIDER === 'anthropic') {
+    return env.ANTHROPIC_API_KEY
+      ? { provider: 'anthropic', apiKey: env.ANTHROPIC_API_KEY, model: env.ANTHROPIC_MODEL }
+      : { provider: 'none', missingKeyFor: 'anthropic' };
+  }
+  return { provider: 'none' };
 }
 
 function toEmailConfig(env: z.infer<typeof envSchema>): EmailConfig {

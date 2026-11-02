@@ -11,7 +11,7 @@ import { PgGarageRepository } from './repositories/pgGarageRepository.js';
 import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
 import { AuthService } from './services/authService.js';
 import { createVehicleLookupProvider } from './providers/createVehicleLookupProvider.js';
-import { createCardReader } from './services/cardReader.js';
+import { createCardScanner } from './services/createCardScanner.js';
 import { CardScanService } from './services/cardScanService.js';
 import { GarageService } from './services/garageService.js';
 import { RuntLookupService } from './services/runtLookupService.js';
@@ -55,8 +55,16 @@ function start(): void {
   if (config.runtProvider.name === 'verifik') {
     console.warn('RUNT_PROVIDER=verifik: el adaptador es un esqueleto (ver src/providers/verifikProvider.ts) y responderá 501.');
   }
-  const cardScanService = new CardScanService(createCardReader(config.anthropic));
-  if (!cardScanService.enabled) console.warn('ANTHROPIC_API_KEY no configurada: POST /garage/scan-card responderá 503.');
+  const cardScanService = new CardScanService(createCardScanner(config.scan));
+  if (config.scan.provider === 'none') {
+    console.warn(
+      config.scan.missingKeyFor
+        ? `SCAN_PROVIDER=${config.scan.missingKeyFor} sin su clave: POST /garage/scan-card responderá 503.`
+        : 'SCAN_PROVIDER=none: POST /garage/scan-card responderá 503.'
+    );
+  } else {
+    console.log(`Lectura de tarjeta: ${config.scan.provider} (${config.scan.model}).`);
+  }
 
   const app = createApp({ config, authService, vehicleService, garageService, cardScanService, runtLookupService, tokenService, users });
   const server = app.listen(config.port, () => {

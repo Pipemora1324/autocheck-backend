@@ -2,7 +2,16 @@ import { normalizePlate, plateKind, type VehicleKind } from '../domain/colombian
 import { detectImageType } from '../domain/imageSignature.js';
 import { HttpError, serviceUnavailable } from '../errors/httpError.js';
 import type { FuelType, ServiceType } from '../repositories/garageRepository.js';
-import { CardReaderUnavailableError, CardUnreadableError, type CardReader, type RawCardExtraction } from './cardReader.js';
+import {
+  CardReaderUnavailableError,
+  CardScannerBusyError,
+  CardUnreadableError,
+  type CardScanner,
+  type RawCardExtraction,
+  type ScanProviderName
+} from './cardScanner.js';
+
+export const SCAN_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano.';
 
 export interface Prefilled<T> {
   value: T | null;
@@ -61,12 +70,16 @@ const text = (max: number) => (value: string) => value.slice(0, max);
 
 export class CardScanService {
   constructor(
-    private readonly reader: CardReader | null,
+    private readonly reader: CardScanner | null,
     private readonly currentYear: () => number = () => new Date().getFullYear()
   ) {}
 
   get enabled(): boolean {
     return this.reader !== null;
+  }
+
+  get provider(): ScanProviderName | 'none' {
+    return this.reader?.provider ?? 'none';
   }
 
   /** Procesa la imagen en memoria y la descarta: no se escribe en disco, base de datos ni logs. */
@@ -89,6 +102,9 @@ export class CardScanService {
     } catch (error) {
       if (error instanceof CardUnreadableError) {
         throw new HttpError(422, 'No pudimos leer la tarjeta. Intenta con una foto más nítida, de frente y con buena luz.', { code: 'CARD_UNREADABLE' });
+      }
+      if (error instanceof CardScannerBusyError) {
+        throw serviceUnavailable(SCAN_PROVIDER_BUSY_MESSAGE, { code: 'SCAN_PROVIDER_BUSY', retryAfterSeconds: 60 });
       }
       if (error instanceof CardReaderUnavailableError) {
         throw serviceUnavailable('La lectura automática no está disponible en este momento. Intenta más tarde o registra el vehículo manualmente.', {

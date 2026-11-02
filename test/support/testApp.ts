@@ -4,6 +4,8 @@ import type { Server } from 'node:http';
 import { createApp, type AppDeps } from '../../src/app.js';
 import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
+import type { CardReader } from '../../src/services/cardReader.js';
+import { CardScanService } from '../../src/services/cardScanService.js';
 import { GarageService } from '../../src/services/garageService.js';
 import type { Mailer } from '../../src/services/mailer.js';
 import { Argon2PasswordHasher } from '../../src/services/passwordHasher.js';
@@ -75,12 +77,16 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   verifyEmailMax: 1000,
   resendVerificationMax: 1000,
   resendVerificationEmailMax: 1000,
-  deleteAccountMax: 1000
+  deleteAccountMax: 1000,
+  scanCardPerHour: 1000,
+  runtLookupPerHour: 1000
 };
 
 export interface TestAppOptions {
   rateLimits?: RateLimitOptions;
   config?: Partial<AppDeps['config']>;
+  /** null simula un servidor sin ANTHROPIC_API_KEY. */
+  cardReader?: CardReader | null;
 }
 
 export interface TestContext {
@@ -97,6 +103,8 @@ export interface TestContext {
   /** Registra, confirma el correo con el enlace enviado y devuelve el access token. */
   registerVerified(email: string, clave?: string): Promise<string>;
   login(email: string, clave: string): Promise<TestResponse>;
+  /** POST multipart/form-data con un archivo en el campo indicado. */
+  upload(path: string, options: { token?: string; field?: string; data: Uint8Array; type?: string; filename?: string }): Promise<TestResponse>;
   close(): Promise<void>;
 }
 
@@ -140,6 +148,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     authService,
     vehicleService,
     garageService,
+    cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
     tokenService: tokens,
     users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }
@@ -189,6 +198,13 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
       return registered.body.accessToken as string;
     },
     login: (email, clave) => request('POST', '/auth/login', { body: { email, password: clave } }),
+    async upload(path, { token, field = 'image', data, type = 'application/octet-stream', filename = 'tarjeta.jpg' }) {
+      const form = new FormData();
+      form.append(field, new Blob([new Uint8Array(data)], { type }), filename);
+      const response = await fetch(baseUrl + path, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const text = await response.text();
+      return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers, cookie: undefined };
+    },
     close: () => new Promise((resolve) => server.close(() => resolve()))
   };
 }

@@ -44,15 +44,6 @@ describe('ADMIN_EMAILS', () => {
     assert.equal(await role('jefa.antigua@example.com'), 'admin');
   });
 
-  it('el admin asignado así puede editar inspecciones', async () => {
-    const token = (await ctx.login('jefe@example.com', DEFAULT_CLAVE)).body.accessToken;
-    const response = await ctx.request('PATCH', '/vehicles/ABC-1234/inspections', {
-      token,
-      body: { inspectionId: 'steering', status: 'Aprobado', result: 'Revisión completada', notes: 'Validado por el jefe.' }
-    });
-    assert.equal(response.status, 200);
-  });
-
   it('los correos fuera de la lista siguen siendo user aunque estén verificados', async () => {
     await ctx.registerVerified('cualquiera@example.com');
     assert.equal((await ctx.login('cualquiera@example.com', DEFAULT_CLAVE)).body.user.role, 'user');

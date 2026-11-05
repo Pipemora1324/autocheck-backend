@@ -8,7 +8,6 @@ import {
   PgUserRepository
 } from './repositories/pgAuthRepositories.js';
 import { PgGarageRepository } from './repositories/pgGarageRepository.js';
-import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
 import { AuthService } from './services/authService.js';
 import { createCardScanner } from './services/createCardScanner.js';
 import { CardScanService } from './services/cardScanService.js';
@@ -16,7 +15,6 @@ import { GarageService } from './services/garageService.js';
 import { createMailer } from './services/mailer.js';
 import { Argon2PasswordHasher } from './services/passwordHasher.js';
 import { TokenService } from './services/tokenService.js';
-import { VehicleService } from './services/vehicleService.js';
 
 function start(): void {
   let config;
@@ -46,7 +44,6 @@ function start(): void {
     appUrl: config.appUrl,
     adminEmails: config.adminEmails
   });
-  const vehicleService = new VehicleService(new PgVehicleRepository(pool));
   const garageService = new GarageService(new PgGarageRepository(pool));
   const cardScanService = new CardScanService(createCardScanner(config.scan));
   if (config.scan.provider === 'none') {
@@ -59,7 +56,7 @@ function start(): void {
     console.log(`Lectura de tarjeta: ${config.scan.provider} (${config.scan.model}).`);
   }
 
-  const app = createApp({ config, authService, vehicleService, garageService, cardScanService, tokenService, users });
+  const app = createApp({ config, authService, garageService, cardScanService, tokenService, users });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });

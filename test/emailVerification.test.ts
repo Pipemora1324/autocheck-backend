@@ -32,7 +32,7 @@ describe('Verificación de correo', () => {
     assert.equal(stored.expiresAt.getTime() - ctx.clock.now.getTime(), VERIFICATION_TOKEN_TTL_MS);
   });
 
-  it('sin verificar se puede iniciar sesión, pero /vehicles responde 403 EMAIL_NOT_VERIFIED', async () => {
+  it('sin verificar se puede iniciar sesión, pero /garage responde 403 EMAIL_NOT_VERIFIED', async () => {
     await ctx.register('sinverificar@example.com');
     const login = await ctx.login('sinverificar@example.com', 'contraseña-segura');
     assert.equal(login.status, 200);
@@ -42,12 +42,12 @@ describe('Verificación de correo', () => {
     assert.equal(me.status, 200);
     assert.equal(me.body.user.emailVerified, false);
 
-    const vehicles = await ctx.request('GET', '/vehicles', { token: login.body.accessToken });
+    const vehicles = await ctx.request('GET', '/garage', { token: login.body.accessToken });
     assert.equal(vehicles.status, 403);
     assert.equal(vehicles.body.code, EMAIL_NOT_VERIFIED);
   });
 
-  it('al verificar, el mismo access token ya puede usar /vehicles y /auth/me lo refleja', async () => {
+  it('al verificar, el mismo access token ya puede usar /garage y /auth/me lo refleja', async () => {
     const registered = await ctx.register('verifica@example.com');
     const accessToken = registered.body.accessToken;
     await flushMail();
@@ -56,7 +56,7 @@ describe('Verificación de correo', () => {
     assert.equal(response.status, 200);
     assert.equal(response.body.emailVerified, true);
 
-    assert.equal((await ctx.request('GET', '/vehicles', { token: accessToken })).status, 200);
+    assert.equal((await ctx.request('GET', '/garage', { token: accessToken })).status, 200);
     assert.equal((await ctx.request('GET', '/auth/me', { token: accessToken })).body.user.emailVerified, true);
     assert.equal((await ctx.login('verifica@example.com', 'contraseña-segura')).body.user.emailVerified, true);
   });

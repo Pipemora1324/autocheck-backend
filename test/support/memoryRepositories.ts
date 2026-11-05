@@ -14,7 +14,6 @@ import type {
   GarageVehicleRecord,
   NewGarageVehicle
 } from '../../src/repositories/garageRepository.js';
-import type { InspectionChange, VehicleRecord, VehicleRepository } from '../../src/repositories/vehicleRepository.js';
 
 export class MemoryUserRepository implements UserRepository {
   readonly users = new Map<string, UserRecord>();
@@ -128,32 +127,6 @@ export class MemoryRefreshTokenRepository implements RefreshTokenRepository {
 
   activeCount(userId: string) {
     return [...this.tokens.values()].filter((row) => row.userId === userId && !row.revokedAt).length;
-  }
-}
-
-export class MemoryVehicleRepository implements VehicleRepository {
-  constructor(
-    private readonly vehicles: VehicleRecord[],
-    private readonly users: MemoryUserRepository
-  ) {}
-
-  async findAll() {
-    return structuredClone(this.vehicles);
-  }
-
-  async findByPlate(plate: string) {
-    const vehicle = this.vehicles.find((item) => item.plate === plate);
-    return vehicle ? structuredClone(vehicle) : null;
-  }
-
-  async updateInspection(plate: string, code: string, change: InspectionChange, userId: string) {
-    const vehicle = this.vehicles.find((item) => item.plate === plate);
-    const inspection = vehicle?.inspections.find((item) => item.code === code);
-    if (!vehicle || !inspection) return false;
-    const now = new Date().toISOString();
-    Object.assign(inspection, change, { updatedByEmail: (await this.users.findById(userId))?.email ?? null, updatedAt: now });
-    vehicle.updatedAt = now;
-    return true;
   }
 }
 

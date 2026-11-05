@@ -10,14 +10,11 @@ import { GarageService } from '../../src/services/garageService.js';
 import type { Mailer } from '../../src/services/mailer.js';
 import { Argon2PasswordHasher } from '../../src/services/passwordHasher.js';
 import { TokenService } from '../../src/services/tokenService.js';
-import { VehicleService } from '../../src/services/vehicleService.js';
-import { demoVehicles } from './fixtures.js';
 import {
   MemoryGarageRepository,
   MemoryOneTimeTokenRepository,
   MemoryRefreshTokenRepository,
-  MemoryUserRepository,
-  MemoryVehicleRepository
+  MemoryUserRepository
 } from './memoryRepositories.js';
 
 // Se generan en cada corrida para no dejar valores con forma de secreto en el repositorio.
@@ -137,7 +134,6 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     now: () => clock.now
   });
   const garageService = new GarageService(garage, () => clock.now);
-  const vehicleService = new VehicleService(new MemoryVehicleRepository(demoVehicles(), users), () => new Date('2026-09-15T15:00:00Z'));
 
   const app = createApp({
     config: {
@@ -149,7 +145,6 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
       ...options.config
     },
     authService,
-    vehicleService,
     garageService,
     cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
     tokenService: tokens,

@@ -10,9 +10,7 @@ import {
   PgUserRepository
 } from '../src/repositories/pgAuthRepositories.js';
 import { PgGarageRepository } from '../src/repositories/pgGarageRepository.js';
-import { PgVehicleRepository } from '../src/repositories/pgVehicleRepository.js';
 import { hashResetToken } from '../src/services/authService.js';
-import { VehicleService } from '../src/services/vehicleService.js';
 import { newUser } from './support/fixtures.js';
 
 // Requiere TEST_DATABASE_URL apuntando a una base desechable: se borra el esquema public antes de migrar.
@@ -33,14 +31,6 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
   });
   after(() => pool?.end());
 
-  it('el seed crea las tres placas ficticias con sus inspecciones', async () => {
-    const vehicles = await new PgVehicleRepository(pool).findAll();
-    assert.deepEqual(vehicles.map((vehicle) => vehicle.plate), ['ABC-1234', 'DEF-5678', 'GHI-9012']);
-    assert.ok(vehicles.every((vehicle) => vehicle.inspections.length === 6));
-    assert.equal(vehicles[0]!.soat.expirationDate, '2026-09-30');
-    assert.equal(vehicles[0]!.inspections[0]!.code, 'body');
-  });
-
   it('usuarios: correo único y en minúsculas', async () => {
     const users = new PgUserRepository(pool);
     const created = await users.create(newUser('integracion@example.com'));
@@ -48,14 +38,6 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.equal(created.role, 'user');
     assert.equal(await users.create(newUser('integracion@example.com')), null);
     await assert.rejects(users.create(newUser('Mayus@Example.com')), /users_email_lowercase/);
-  });
-
-  it('actualiza inspecciones registrando el usuario', async () => {
-    const user = (await new PgUserRepository(pool).create(newUser('tecnico-pg@example.com')))!;
-    const service = new VehicleService(new PgVehicleRepository(pool));
-    const vehicle = await service.updateInspection('ABC-1234', { inspectionId: 'steering', status: 'Aprobado', result: 'OK', notes: 'Validado' }, user.id);
-    assert.equal(vehicle.inspections.find((item) => item.id === 'steering')!.updatedBy, 'tecnico-pg@example.com');
-    await assert.rejects(service.updateInspection('ABC-1234', { inspectionId: 'radio', status: 'Aprobado', result: 'x', notes: 'y' }, user.id));
   });
 
   it('tokens de recuperación: un solo uso aun con solicitudes simultáneas, y se invalidan los demás', async () => {

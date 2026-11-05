@@ -75,7 +75,7 @@ describe('DELETE /auth/me', () => {
     assert.equal((await ctx.login('borrar@example.com', DEFAULT_CLAVE)).status, 401);
     // El access token emitido antes sigue siendo un JWT válido, pero ya no hay usuario detrás.
     assert.equal((await ctx.request('GET', '/auth/me', { token: login.body.accessToken })).status, 401);
-    assert.equal((await ctx.request('GET', '/vehicles', { token: login.body.accessToken })).status, 401);
+    assert.equal((await ctx.request('GET', '/garage', { token: login.body.accessToken })).status, 401);
   });
 
   it('el correo queda libre para registrarse de nuevo', async () => {

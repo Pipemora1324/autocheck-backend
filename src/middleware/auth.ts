@@ -1,6 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { forbidden, unauthorized } from '../errors/httpError.js';
-import type { UserRepository, UserRole } from '../repositories/authRepositories.js';
+import type { UserRepository } from '../repositories/authRepositories.js';
 import type { AuthUser, TokenService } from '../services/tokenService.js';
 
 export function requireAuth(tokens: TokenService): RequestHandler {
@@ -14,16 +14,6 @@ export function requireAuth(tokens: TokenService): RequestHandler {
     }
     request.user = user;
     next();
-  };
-}
-
-export function requireRole(...roles: UserRole[]): RequestHandler {
-  return (request: Request, _response: Response, next: NextFunction) => {
-    if (!request.user) {
-      next(unauthorized());
-      return;
-    }
-    next(roles.includes(request.user.role) ? undefined : forbidden());
   };
 }
 

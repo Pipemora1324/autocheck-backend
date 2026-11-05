@@ -9,6 +9,7 @@ import {
   PgRefreshTokenRepository,
   PgUserRepository
 } from '../src/repositories/pgAuthRepositories.js';
+import { PgDiagnosisRepository } from '../src/repositories/pgDiagnosisRepository.js';
 import { PgGarageRepository } from '../src/repositories/pgGarageRepository.js';
 import { hashResetToken } from '../src/services/authService.js';
 import { newUser } from './support/fixtures.js';
@@ -134,5 +135,42 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     await users.delete(owner.id);
     assert.equal(await garage.count(owner.id), 0);
     assert.equal(await garage.count(other.id), 1);
+  });
+
+  it('diagnósticos: historial paginado, aislado por usuario y borrado en cascada con el vehículo y con el usuario', async () => {
+    const users = new PgUserRepository(pool);
+    const garage = new PgGarageRepository(pool);
+    const diagnoses = new PgDiagnosisRepository(pool);
+    const owner = (await users.create(newUser('diagnostico-pg@example.com')))!;
+    const other = (await users.create(newUser('diagnostico-otro-pg@example.com')))!;
+    const vehicleData = { brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: null, chassis: null, fuelType: null, serviceType: null, mileageKm: null, source: 'manual' as const };
+    const first = (await garage.create(owner.id, { ...vehicleData, plate: 'DGN-001' }))!;
+    const second = (await garage.create(owner.id, { ...vehicleData, plate: 'DGN-002' }))!;
+
+    const base = { userId: owner.id, vehicleId: first.id, telltaleId: 'check_engine', severidad: 'amarillo' as const };
+    const older = await diagnoses.create({ ...base, confianza: 0.91, descripcion: 'luz naranja' });
+    const newer = await diagnoses.create({ ...base, confianza: null, descripcion: null });
+    await diagnoses.create({ ...base, vehicleId: second.id, confianza: 0.8, descripcion: null });
+    assert.equal(older.confianza, 0.91);
+    await assert.rejects(diagnoses.create({ ...base, severidad: 'verde' as never, confianza: null, descripcion: null }), /diagnoses_severidad_valid/);
+    await assert.rejects(diagnoses.create({ ...base, confianza: 2, descripcion: null }), /diagnoses_confianza_valid/);
+    await assert.rejects(diagnoses.create({ ...base, confianza: null, descripcion: 'x'.repeat(501) }), /diagnoses_descripcion_length/);
+
+    const page = await diagnoses.list(owner.id, first.id, { limit: 1, offset: 0 });
+    assert.equal(page.total, 2);
+    assert.deepEqual(page.items.map((item) => item.id), [newer.id]);
+    assert.deepEqual((await diagnoses.list(owner.id, first.id, { limit: 1, offset: 1 })).items.map((item) => item.id), [older.id]);
+
+    assert.equal((await diagnoses.list(other.id, first.id, { limit: 10, offset: 0 })).total, 0);
+    assert.equal(await diagnoses.delete(other.id, first.id, older.id), false);
+    assert.equal(await diagnoses.delete(owner.id, first.id, older.id), true);
+    assert.equal((await diagnoses.list(owner.id, first.id, { limit: 10, offset: 0 })).total, 1);
+
+    await garage.delete(owner.id, 'DGN-001');
+    assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE vehicle_id = $1', [first.id])).rows[0].total, 0);
+    assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total, 1);
+
+    await users.delete(owner.id);
+    assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total, 0);
   });
 });

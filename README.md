@@ -1,15 +1,27 @@
 # AutoCheck-CO Backend
 
-API REST en Express 5 + TypeScript para AutoCheck-CO: registrar vehículos colombianos en un garaje personal. Usa Postgres (Neon) y autenticación propia con JWT.
+API REST en Express 5 + TypeScript para AutoCheck-CO: un garaje personal con **diagnóstico de testigos del tablero con IA**. El usuario registra sus vehículos, fotografía un testigo encendido (o lo describe o lo elige de una lista) y la app le explica qué es, qué tan urgente es, qué puede revisar con seguridad y cuándo ir al mecánico, con el motivo concreto. Usa Postgres (Neon) y autenticación propia con JWT.
 
-## Qué es real, qué es de demostración y qué depende de terceros
+## Qué es real, qué es IA y qué queda como trabajo futuro
 
 | Parte | Estado |
 | --- | --- |
 | Cuentas, login, sesiones con refresh rotativo, verificación de correo, recuperación de contraseña, borrado de cuenta, admin por `ADMIN_EMAILS` | **Real**: funciona contra Postgres |
 | Garaje (`/garage`): vehículos que registra cada usuario | **Real**, con **solo los datos que el usuario registra**. No es una consulta oficial |
-| Lectura de la tarjeta de propiedad (`POST /garage/scan-card`) | **Real**, con un **proveedor externo** intercambiable (`SCAN_PROVIDER`): Gemini (plan gratuito, recomendado) o Anthropic. Apagada con `none` o sin la clave del proveedor |
+| Catálogo de testigos (`src/data/telltales.ts`, `GET /telltales`) | **Real**: 39 testigos versionados en el código. Es la fuente de verdad de todo el diagnóstico. **Pendiente:** debe revisarlo una persona con conocimiento mecánico antes de la entrega |
+| Diagnóstico con elección manual (`telltaleId`) | **Real**, sin IA y sin enviar nada a terceros. Funciona aunque la IA esté apagada |
+| Diagnóstico con foto o descripción | **IA (Gemini), solo para identificar el testigo.** El modelo elige un id del catálogo y da su confianza; el servidor redacta la respuesta desde el catálogo. Con `SCAN_PROVIDER=none`, otro proveedor o sin clave, responde 503. La precisión con fotos reales **aún no está medida**: las pruebas simulan a Gemini |
+| Reglas de seguridad (`neverDrive`, rojo y orden de detenerse, descarte de la nota del modelo) | **Real**: las aplica el servidor, sin importar lo que diga el modelo |
+| Historial de diagnósticos | **Real**, en Postgres, sin la imagen |
+| Lectura de la tarjeta de propiedad (`POST /garage/scan-card`) | Opcional para registrar el vehículo. **Real**, con un **proveedor externo** intercambiable (`SCAN_PROVIDER`): Gemini (plan gratuito, recomendado) o Anthropic. Apagada con `none` o sin la clave del proveedor |
 | Correo (verificación y recuperación) | **Proveedor externo**: Brevo por HTTPS en producción (Render gratuito bloquea SMTP). En desarrollo los enlaces salen por consola |
+
+**El diagnóstico es orientación general:** no reemplaza a un mecánico y no lee los códigos de falla del vehículo. Cada respuesta lo dice.
+
+**Trabajo futuro:**
+
+- Consultar el RUNT con un proveedor autorizado. Se retiró porque la información es confidencial y de pago; ni el código ni los datos asociados siguen en este repositorio.
+- Medir la precisión del reconocimiento con fotos reales de tableros.
 
 ## Requisitos
 
@@ -40,19 +52,22 @@ Las variables se validan al arrancar con zod; si falta o es inválida alguna, el
 | `npm run migrate:prod` | Migraciones desde `dist/` (lo usa Render al arrancar) |
 | `npm test`             | Pruebas con el test runner de Node                    |
 
-Las pruebas usan repositorios en memoria, y un lector de tarjetas simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
+Las pruebas usan repositorios en memoria, y Gemini simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
 
 ## Endpoints
 
 El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md](docs/API.md). En resumen:
 
-- **Públicos:** `GET /health`, `GET /config/public` (consentimiento y proveedor de lectura activo), `POST /auth/register` (exige `acceptedTerms: true`), `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/verify-email`, `/auth/resend-verification`.
-- **Con token:** `GET /auth/me`, `DELETE /auth/me`.
+- **Públicos:** `GET /health`, `GET /config/public` (consentimiento, avisos y proveedores activos), `POST /auth/register` (exige `acceptedTerms: true`), `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/verify-email`, `/auth/resend-verification`.
+- **Con token:** `GET /auth/me`, `DELETE /auth/me`, `GET /telltales`.
 - **Con token y correo verificado** (si no: `403 EMAIL_NOT_VERIFIED`):
   - `GET/POST /garage`
   - `GET/PATCH/DELETE /garage/:plate`
   - `GET /garage/capabilities`
   - `POST /garage/scan-card`
+  - `POST /garage/:plate/diagnoses`
+  - `GET /garage/:plate/diagnoses`
+  - `DELETE /garage/:plate/diagnoses/:id`
 
 ## Tratamiento de datos personales (Ley 1581 de 2012)
 
@@ -65,7 +80,7 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 **Autorización.**
 
 - El registro exige marcar `acceptedTerms: true`, con el texto de `GET /config/public` (`privacyPolicy.registrationConsent`).
-- Se guardan la fecha de aceptación (`users.terms_accepted_at`) y la versión de esta política (`users.terms_version`, hoy `2026-11-02.2`) como prueba de la autorización previa, expresa e informada.
+- Se guardan la fecha de aceptación (`users.terms_accepted_at`) y la versión de esta política (`users.terms_version`, hoy `2026-11-04.1`) como prueba de la autorización previa, expresa e informada.
 
 **Qué se guarda y para qué**
 
@@ -77,7 +92,8 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 | Sesiones | `refresh_tokens` | Identificador y vigencia de cada sesión (no el token) para poder revocarlas |
 | Tokens de verificación y recuperación | `email_verification_tokens`, `password_reset_tokens` | Solo el hash sha256; expiran en 24 h y 30 min y son de un solo uso |
 | Vehículos del garaje | `user_vehicles` | Datos que el usuario registra (placa, marca, línea, año, color, combustible, kilometraje, etc.). **No** se guarda el documento del propietario |
-| Registros técnicos | Logs de Render | IP, método, ruta, código de respuesta y hora, para seguridad y diagnóstico. No se registran cuerpos de petición, tokens ni datos extraídos de documentos |
+| Historial de diagnósticos | `diagnoses` | Testigo, severidad, confianza, descripción que escribió el usuario y fecha, para que consulte sus diagnósticos anteriores. **No** se guarda la imagen. El usuario puede borrar cada uno |
+| Registros técnicos | Logs de Render | IP, método, ruta (con la placa enmascarada y sin cadena de consulta), código de respuesta y hora, para seguridad y diagnóstico. No se registran cuerpos de petición, tokens, imágenes, descripciones, placas ni datos extraídos de documentos |
 
 **Encargados externos**
 
@@ -85,6 +101,7 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 - **Neon:** aloja la base de datos.
 - **Render:** aloja la API.
 - **Proveedor de lectura de la tarjeta:** recibe la foto, solo si el usuario usa esa función.
+- **Proveedor de diagnóstico (Google, Gemini API):** recibe la foto del tablero, la descripción y la marca, línea, año y combustible del vehículo, solo si el usuario pide el diagnóstico con IA. No recibe la placa.
 
 **Foto de la tarjeta de propiedad**
 
@@ -97,10 +114,17 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 - **Datos extraídos:** se devuelven únicamente al usuario para que los confirme. No se guardan ni se escriben en logs. El documento y el nombre del propietario no se extraen.
 - **Tarjetas ajenas:** **no se debe subir la tarjeta de otra persona sin su autorización.** El usuario lo declara al aceptar la política.
 
+**Foto del tablero (diagnóstico con IA)**
+
+- **Para qué se envía:** la foto del tablero se envía a un **proveedor externo** de inteligencia artificial para identificar el testigo. El frontend muestra `diagnosis.notice` de `GET /config/public` antes de subirla.
+- **Plan gratuito de Gemini:** el proveedor (Google, en EE. UU.) puede usarla para mejorar sus productos.
+- **Qué hace AutoCheck-CO con ella:** la procesa en memoria y **no la guarda en sus servidores**: ni en disco, ni en la base de datos, ni en logs.
+- **Alternativa:** elegir el testigo de la lista no envía nada a terceros.
+
 **Derechos del titular**
 
-- **Conocer y actualizar:** `GET /auth/me` y la edición de los vehículos del garaje.
-- **Suprimir:** `DELETE /auth/me` borra la cuenta, sus sesiones, sus tokens y sus vehículos.
+- **Conocer y actualizar:** `GET /auth/me`, la edición de los vehículos del garaje y el historial de diagnósticos.
+- **Suprimir:** `DELETE /auth/me` borra la cuenta, sus sesiones, sus tokens, sus vehículos y sus diagnósticos. Borrar un vehículo borra su historial, y cada diagnóstico también se puede borrar por separado.
 - **Revocar la autorización:** se hace eliminando la cuenta.
 - **Otras solicitudes:** al correo del responsable indicado arriba.
 
@@ -112,11 +136,12 @@ docs/API.md          Contrato HTTP para el frontend
 src/config/          Validación de variables de entorno (zod)
 src/db/              Pool de conexiones y runner de migraciones
 src/routes/          Definición de rutas
+src/data/            Catálogo de testigos (fuente de verdad del diagnóstico)
 src/domain/          Placas colombianas y firma de imágenes
 src/controllers/     Validación de entrada y respuesta HTTP
-src/services/        Reglas de negocio (auth, garaje, lectura de tarjeta, correo)
+src/services/        Reglas de negocio (auth, garaje, diagnóstico, identificación con IA, lectura de tarjeta, correo)
 src/repositories/    Acceso a datos (Postgres)
-src/middleware/      Auth, rate limit y manejo de errores
+src/middleware/      Auth, rate limit, registro de peticiones sin datos sensibles y manejo de errores
 ```
 
 ## Despliegue
@@ -125,4 +150,4 @@ Ver [DEPLOY.md](DEPLOY.md): Neon, Render, Vercel, Brevo, Gemini y la lista de pa
 
 ## Frontend
 
-El cliente Angular vive en [autocheck-frontend](https://github.com/Pipemora1324/autocheck-frontend).
+El cliente Angular vive en [autocheck-frontend](https://github.com/Pipemora1324/autocheck-frontend). **Todavía no está adaptado a este cambio de enfoque:** sigue llamando a rutas y campos retirados de esta API.

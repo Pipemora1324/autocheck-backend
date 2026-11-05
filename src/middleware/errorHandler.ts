@@ -23,8 +23,9 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
 
   if (error instanceof multer.MulterError) {
     const tooLarge = error.code === 'LIMIT_FILE_SIZE';
+    const invalidUpload = error.code === 'LIMIT_FIELD_VALUE' ? 'Un campo de texto supera el tamaño permitido.' : 'Envía una sola imagen en el campo "image" (multipart/form-data).';
     response.status(tooLarge ? 413 : 400).json({
-      message: tooLarge ? 'La imagen supera el máximo de 5 MB.' : 'Envía una sola imagen en el campo "image" (multipart/form-data).',
+      message: tooLarge ? 'La imagen supera el máximo de 5 MB.' : invalidUpload,
       code: tooLarge ? 'IMAGE_TOO_LARGE' : 'INVALID_UPLOAD'
     });
     return;
@@ -42,6 +43,8 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
     return;
   }
 
-  console.error('Error no controlado:', error);
+  // Sin el objeto completo: los errores de Postgres traen en "detail" los valores de la fila.
+  const { code, stack, message } = error as { code?: unknown; stack?: string; message?: string };
+  console.error('Error no controlado:', code ?? '', stack ?? message ?? 'sin detalle');
   response.status(500).json({ message: 'Ocurrió un error inesperado. Intenta de nuevo más tarde.' });
 };

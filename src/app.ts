@@ -2,7 +2,6 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import type { AppConfig } from './config/env.js';
 import { createAuthController } from './controllers/authController.js';
 import { cardImageUpload, createCardScanController } from './controllers/cardScanController.js';
@@ -13,6 +12,7 @@ import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
 import type { UserRepository } from './repositories/authRepositories.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { createAuthRateLimits, perUserHourlyLimiter, type RateLimitOptions } from './middleware/rateLimit.js';
+import { requestLogger } from './middleware/requestLogger.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
 import { createGarageRoutes } from './routes/garageRoutes.js';
 import type { AuthService } from './services/authService.js';
@@ -45,7 +45,7 @@ export function createApp({ config, authService, garageService, cardScanService,
   app.use(cors({ origin: config.corsOrigins, credentials: true }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
-  if (config.nodeEnv !== 'test') app.use(morgan(config.isProduction ? 'combined' : 'dev'));
+  if (config.nodeEnv !== 'test') app.use(requestLogger(config.isProduction));
 
   app.get('/health', (_request, response) => {
     response.json({ status: 'ok', service: 'AutoCheck-CO' });

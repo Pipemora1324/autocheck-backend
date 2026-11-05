@@ -79,7 +79,8 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   resendVerificationEmailMax: 1000,
   deleteAccountMax: 1000,
   scanCardPerHour: 1000,
-  diagnosesPerHour: 1000
+  aiDiagnosesPerHour: 1000,
+  manualDiagnosesPerHour: 1000
 };
 
 export interface TestAppOptions {

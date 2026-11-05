@@ -28,7 +28,10 @@ export interface RateLimitOptions {
   resendVerificationEmailMax?: number;
   deleteAccountMax?: number;
   scanCardPerHour?: number;
-  diagnosesPerHour?: number;
+  /** Diagnósticos que llaman a la IA. */
+  aiDiagnosesPerHour?: number;
+  /** Diagnósticos con el testigo elegido de la lista. */
+  manualDiagnosesPerHour?: number;
 }
 
 const limiter = (limit: number, message: string): RequestHandler =>
@@ -75,14 +78,64 @@ export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLi
 
 const HOUR_MS = 60 * 60 * 1000;
 
+export type DiagnosisLimitScope = 'ia' | 'manual' | 'total';
+
+interface PerUserLimiterOptions {
+  /** Campos adicionales del cuerpo del 429. */
+  details?: Record<string, unknown>;
+  /** Los errores 4xx no llegaron a la operación costosa: no cuentan. */
+  skipClientErrors?: boolean;
+  skip?: () => boolean;
+}
+
 /** Límite por usuario autenticado (no por IP) para operaciones costosas, como la lectura de tarjetas. */
-export function perUserHourlyLimiter(limit: number, message: string): RequestHandler {
+export function perUserHourlyLimiter(limit: number, message: string, { details, skipClientErrors = false, skip }: PerUserLimiterOptions = {}): RequestHandler {
   return rateLimit({
     windowMs: HOUR_MS,
     limit,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    message: { message, code: 'RATE_LIMITED' },
-    keyGenerator: (request) => `user:${request.user?.id ?? 'anonimo'}`
+    message: { message, code: 'RATE_LIMITED', ...details },
+    keyGenerator: (request) => `user:${request.user?.id ?? 'anonimo'}`,
+    ...(skip ? { skip } : {}),
+    ...(skipClientErrors
+      ? { skipFailedRequests: true, requestWasSuccessful: (_request: Request, response: { statusCode: number }) => response.statusCode < 400 || response.statusCode >= 500 }
+      : {})
   });
+}
+
+const isManualChoice = (request: Request): boolean => {
+  const telltaleId: unknown = request.body?.telltaleId;
+  return typeof telltaleId === 'string' && telltaleId.trim() !== '';
+};
+
+export interface DiagnosisRateLimits {
+  /** Va antes de multer: acota las subidas de un usuario, aunque se rechacen después. */
+  uploads: RequestHandler;
+  /** Va después de multer, porque necesita ver si llegó telltaleId. */
+  byKind: RequestHandler;
+}
+
+/**
+ * La IA y la elección manual tienen contadores separados: la manual no gasta el cupo de la IA, y sigue disponible cuando este se agota.
+ * Sin IA configurada no se consume nada del cupo de la IA, porque no hay llamada.
+ */
+export function createDiagnosisRateLimits(options: RateLimitOptions, aiEnabled: boolean): DiagnosisRateLimits {
+  const aiMax = options.aiDiagnosesPerHour ?? 15;
+  const manualMax = options.manualDiagnosesPerHour ?? 60;
+  const ai = perUserHourlyLimiter(aiMax, `Alcanzaste el máximo de ${aiMax} diagnósticos con IA por hora. Intenta más tarde o elige el testigo de la lista, que no cuenta para este límite.`, {
+    details: { limite: 'ia' satisfies DiagnosisLimitScope },
+    skipClientErrors: true,
+    skip: () => !aiEnabled
+  });
+  const manual = perUserHourlyLimiter(manualMax, `Alcanzaste el máximo de ${manualMax} consultas de la lista por hora. Intenta más tarde.`, {
+    details: { limite: 'manual' satisfies DiagnosisLimitScope },
+    skipClientErrors: true
+  });
+  return {
+    uploads: perUserHourlyLimiter(aiMax + manualMax, 'Alcanzaste el máximo de solicitudes de diagnóstico por hora. Intenta más tarde.', {
+      details: { limite: 'total' satisfies DiagnosisLimitScope }
+    }),
+    byKind: (request, response, next) => (isManualChoice(request) ? manual : ai)(request, response, next)
+  };
 }

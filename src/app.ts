@@ -12,7 +12,7 @@ import { createTelltaleController } from './controllers/telltaleController.js';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
 import type { UserRepository } from './repositories/authRepositories.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-import { createAuthRateLimits, perUserHourlyLimiter, type RateLimitOptions } from './middleware/rateLimit.js';
+import { createAuthRateLimits, createDiagnosisRateLimits, perUserHourlyLimiter, type RateLimitOptions } from './middleware/rateLimit.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
 import { createGarageRoutes } from './routes/garageRoutes.js';
@@ -61,7 +61,7 @@ export function createApp({ config, authService, garageService, cardScanService,
   const cardScan = createCardScanController(cardScanService);
   const scanCardLimit = perUserHourlyLimiter(rateLimits?.scanCardPerHour ?? 10, 'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.');
   const diagnosis = createDiagnosisController(diagnosisService);
-  const diagnosisLimit = perUserHourlyLimiter(rateLimits?.diagnosesPerHour ?? 15, 'Alcanzaste el máximo de 15 diagnósticos por hora. Intenta más tarde.');
+  const diagnosisLimits = createDiagnosisRateLimits(rateLimits ?? {}, diagnosisService.enabled);
   app.use(
     createGarageRoutes(createGarageController(garageService), authenticate, requireVerified, {
       // El límite va antes de multer para no procesar subidas que se van a rechazar.
@@ -70,7 +70,7 @@ export function createApp({ config, authService, garageService, cardScanService,
         router.post('/garage/scan-card', scanCardLimit, cardImageUpload, cardScan.scan);
       },
       after: (router) => {
-        router.post('/garage/:plate/diagnoses', diagnosisLimit, diagnosisUpload, diagnosis.create);
+        router.post('/garage/:plate/diagnoses', diagnosisLimits.uploads, diagnosisUpload, diagnosisLimits.byKind, diagnosis.create);
         router.get('/garage/:plate/diagnoses', diagnosis.list);
         router.get('/garage/:plate/diagnoses/:id', diagnosis.get);
         router.delete('/garage/:plate/diagnoses/:id', diagnosis.remove);

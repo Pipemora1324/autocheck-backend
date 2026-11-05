@@ -551,25 +551,121 @@ describe('Elección manual del testigo (sin IA)', () => {
   });
 });
 
-describe('Límite de diagnósticos por hora', () => {
+describe('Límites de diagnósticos por hora', () => {
+  // Sin valor explícito se aplican los límites por defecto de la aplicación.
+  const DEFAULTS = { aiDiagnosesPerHour: undefined as unknown as number, manualDiagnosesPerHour: undefined as unknown as number };
   let ctx: TestContext;
-  // Sin valor explícito se aplica el límite por defecto de la aplicación.
-  before(async () => { ctx = await startTestApp({ rateLimits: { diagnosesPerHour: undefined as unknown as number } }); });
+  let gemini: FakeGemini;
+
+  const user = async (email: string) => {
+    const token = await ctx.registerVerified(email);
+    await addVehicle(ctx, token);
+    return token;
+  };
+  const withAi = (token: string) => ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { description: 'luz naranja' } });
+  const manual = (token: string) => ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'cinturon' } });
+
+  before(async () => {
+    gemini = new FakeGemini();
+    gemini.answer(recognized('check_engine'));
+    ctx = await startTestApp({ telltaleIdentifier: gemini.identifier, rateLimits: DEFAULTS });
+  });
   after(() => ctx.close());
 
-  it('permite 15 por usuario, y cada usuario tiene su propio límite', async () => {
-    const ana = await ctx.registerVerified('limite.diag.ana@example.com');
-    const luis = await ctx.registerVerified('limite.diag.luis@example.com');
-    await addVehicle(ctx, ana);
-    await addVehicle(ctx, luis);
-    const send = (token: string) => ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'cinturon' } });
+  it('la IA permite 15 por usuario; al agotarse, la elección manual sigue funcionando y otro usuario no se afecta', async () => {
+    const ana = await user('limite.ia.ana@example.com');
+    const luis = await user('limite.ia.luis@example.com');
 
-    for (let attempt = 1; attempt <= 15; attempt++) assert.equal((await send(ana)).status, 201, `intento ${attempt}`);
-    const limited = await send(ana);
+    for (let attempt = 1; attempt <= 15; attempt++) assert.equal((await withAi(ana)).status, 201, `intento ${attempt}`);
+    const calls = gemini.calls.length;
+    const limited = await withAi(ana);
     assert.equal(limited.status, 429);
     assert.equal(limited.body.code, 'RATE_LIMITED');
-    assert.match(limited.body.message, /15 diagnósticos por hora/);
-    assert.equal((await send(luis)).status, 201);
+    assert.equal(limited.body.limite, 'ia');
+    assert.match(limited.body.message, /15 diagnósticos con IA por hora/);
+    assert.match(limited.body.message, /elige el testigo de la lista/);
+    assert.equal(gemini.calls.length, calls, 'no se llama a la IA por encima del límite');
+
+    assert.equal((await manual(ana)).status, 201);
+    assert.equal((await withAi(luis)).status, 201);
+  });
+
+  it('la elección manual tiene su propio límite de 60, y no gasta el cupo de la IA', async () => {
+    const ana = await user('limite.manual.ana@example.com');
+    for (let attempt = 1; attempt <= 60; attempt++) assert.equal((await manual(ana)).status, 201, `intento ${attempt}`);
+    const limited = await manual(ana);
+    assert.equal(limited.status, 429);
+    assert.equal(limited.body.code, 'RATE_LIMITED');
+    assert.equal(limited.body.limite, 'manual');
+    assert.match(limited.body.message, /60 consultas de la lista por hora/);
+    assert.equal((await withAi(ana)).status, 201);
+  });
+
+  it('leer el detalle y el historial no cuenta para ningún límite', async () => {
+    const ana = await user('limite.lectura@example.com');
+    const created = await manual(ana);
+    for (let attempt = 0; attempt < 80; attempt++) {
+      assert.equal((await ctx.request('GET', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status, 200);
+    }
+    assert.equal((await ctx.request('GET', `/garage/${PLATE}/diagnoses`, { token: ana })).status, 200);
+    assert.equal((await manual(ana)).status, 201);
+  });
+
+  it('una solicitud rechazada antes de llamar a la IA no gasta su cupo', async () => {
+    const ana = await user('limite.rechazos@example.com');
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const invalid = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, image: new TextEncoder().encode('no es una imagen') });
+      assert.equal(invalid.status, 415);
+    }
+    assert.equal((await withAi(ana)).status, 201);
+  });
+
+  it('un 429 de Gemini es 503 DIAGNOSIS_PROVIDER_BUSY, no RATE_LIMITED, y sí gasta el cupo porque hubo llamada', async () => {
+    const ana = await user('limite.ocupado@example.com');
+    gemini.status = 429;
+    try {
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const busy = await withAi(ana);
+        assert.equal(busy.status, 503);
+        assert.equal(busy.body.code, 'DIAGNOSIS_PROVIDER_BUSY');
+      }
+      const limited = await withAi(ana);
+      assert.equal(limited.status, 429);
+      assert.equal(limited.body.code, 'RATE_LIMITED');
+    } finally {
+      gemini.answer(recognized('check_engine'));
+    }
+  });
+
+  it('el tope de subidas acota las solicitudes aunque se rechacen después', async () => {
+    const capped = await startTestApp({ telltaleIdentifier: new FakeGemini().identifier, rateLimits: { aiDiagnosesPerHour: 1, manualDiagnosesPerHour: 1 } });
+    try {
+      const token = await capped.registerVerified('limite.tope@example.com');
+      await addVehicle(capped, token);
+      const invalid = () => capped.postForm(`/garage/${PLATE}/diagnoses`, { token, image: new TextEncoder().encode('no es una imagen') });
+      assert.equal((await invalid()).status, 415);
+      assert.equal((await invalid()).status, 415);
+      const limited = await invalid();
+      assert.equal(limited.status, 429);
+      assert.equal(limited.body.limite, 'total');
+    } finally {
+      await capped.close();
+    }
+  });
+
+  it('sin IA configurada, los intentos con IA responden 503 sin gastar ningún cupo de la IA', async () => {
+    const off = await startTestApp({ telltaleIdentifier: null, rateLimits: { aiDiagnosesPerHour: 1, manualDiagnosesPerHour: 100 } });
+    try {
+      const token = await off.registerVerified('limite.sinia@example.com');
+      await addVehicle(off, token);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const response = await off.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { description: 'luz' } });
+        assert.equal(response.status, 503);
+        assert.equal(response.body.code, 'AI_NOT_CONFIGURED');
+      }
+    } finally {
+      await off.close();
+    }
   });
 });
 
@@ -687,7 +783,6 @@ describe('GET /garage/:plate/diagnoses/:id', () => {
 
   before(async () => {
     gemini = new FakeGemini();
-    // Con un límite de 1 por hora: si leer contara, el segundo GET o el POST de después fallarían.
     ctx = await startTestApp({ telltaleIdentifier: gemini.identifier });
     ana = await ctx.registerVerified('detalle.ana@example.com');
     luis = await ctx.registerVerified('detalle.luis@example.com');

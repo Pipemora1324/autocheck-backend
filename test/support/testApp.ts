@@ -133,7 +133,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     appUrl: 'http://localhost:4200',
     now: () => clock.now
   });
-  const garageService = new GarageService(garage, () => clock.now);
+  const garageService = new GarageService(garage);
 
   const app = createApp({
     config: {

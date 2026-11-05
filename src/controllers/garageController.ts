@@ -29,11 +29,6 @@ export function createGarageController(service: GarageService) {
       const { plate } = garagePlateParamsSchema.parse(request.params);
       await service.remove(currentUser(request).id, plate);
       response.status(204).end();
-    },
-
-    async assessment(request: Request, response: Response): Promise<void> {
-      const { plate } = garagePlateParamsSchema.parse(request.params);
-      response.json(await service.assess(currentUser(request).id, plate));
     }
   };
 }

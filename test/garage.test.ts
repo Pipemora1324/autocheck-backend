@@ -13,9 +13,7 @@ const sandero = {
   cylinderCc: 1598,
   chassis: '9fbbsraddkm123456',
   fuelType: 'Gasolina',
-  serviceType: 'Particular',
-  soatExpiresOn: '2027-06-30',
-  rtmExpiresOn: '2027-03-15'
+  serviceType: 'Particular'
 };
 
 describe('Garaje /garage', () => {
@@ -25,7 +23,6 @@ describe('Garaje /garage', () => {
 
   before(async () => {
     ctx = await startTestApp();
-    ctx.clock.now = new Date('2026-11-02T17:00:00Z');
     ana = await ctx.registerVerified('ana.garaje@example.com');
     luis = await ctx.registerVerified('luis.garaje@example.com');
   });
@@ -39,15 +36,14 @@ describe('Garaje /garage', () => {
     assert.equal(response.body.code, EMAIL_NOT_VERIFIED);
   });
 
-  it('crea un vehículo normalizando placa y chasis, con estados calculados', async () => {
+  it('crea un vehículo normalizando placa y chasis', async () => {
     const response = await ctx.request('POST', '/garage', { token: ana, body: sandero });
     assert.equal(response.status, 201);
     assert.equal(response.body.plate, 'ABC-123');
     assert.equal(response.body.kind, 'carro');
     assert.equal(response.body.chassis, '9FBBSRADDKM123456');
     assert.equal(response.body.source, 'manual');
-    assert.equal(response.body.soat.status, 'Vigente');
-    assert.equal(response.body.runtStatus, null);
+    for (const removed of ['soat', 'rtm', 'soatExpiresOn', 'rtmExpiresOn', 'runtStatus']) assert.equal(response.body[removed], undefined, removed);
     assert.equal(response.body.userId, undefined);
     assert.equal(response.body.id, undefined);
   });
@@ -57,7 +53,6 @@ describe('Garaje /garage', () => {
     assert.equal(response.status, 201);
     assert.equal(response.body.plate, 'XYZ-12D');
     assert.equal(response.body.kind, 'moto');
-    assert.equal(response.body.soat.status, 'Sin información');
   });
 
   it('rechaza placas inválidas, datos fuera de rango y campos no permitidos (como el documento del propietario)', async () => {
@@ -67,10 +62,10 @@ describe('Garaje /garage', () => {
 
     const badData = await ctx.request('POST', '/garage', {
       token: ana,
-      body: { ...sandero, plate: 'QWE-111', year: 1800, fuelType: 'Agua', soatExpiresOn: '30/06/2027' }
+      body: { ...sandero, plate: 'QWE-111', year: 1800, fuelType: 'Agua' }
     });
     assert.equal(badData.status, 400);
-    assert.deepEqual(badData.body.errors.map((error: { field: string }) => error.field).sort(), ['fuelType', 'soatExpiresOn', 'year']);
+    assert.deepEqual(badData.body.errors.map((error: { field: string }) => error.field).sort(), ['fuelType', 'year']);
 
     const withOwner = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-112', ownerDocument: 'CC 123' } });
     assert.equal(withOwner.status, 400);
@@ -78,6 +73,9 @@ describe('Garaje /garage', () => {
 
     const runtSource = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-113', source: 'runt' } });
     assert.equal(runtSource.status, 400);
+
+    const withSoat = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-114', soatExpiresOn: '2027-06-30' } });
+    assert.equal(withSoat.status, 400);
   });
 
   it('no permite repetir la placa en el mismo garaje', async () => {
@@ -92,11 +90,10 @@ describe('Garaje /garage', () => {
 
     assert.equal((await ctx.request('GET', '/garage/abc123', { token: ana })).body.model, 'Sandero');
 
-    const patched = await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { color: 'Rojo', rtmExpiresOn: '2026-11-20', chassis: null } });
+    const patched = await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { color: 'Rojo', chassis: null } });
     assert.equal(patched.status, 200);
     assert.equal(patched.body.color, 'Rojo');
     assert.equal(patched.body.chassis, null);
-    assert.equal(patched.body.rtm.status, 'Por Vencer');
 
     assert.equal((await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: {} })).status, 400);
     assert.equal((await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { plate: 'ZZZ-999' } })).status, 400);
@@ -107,8 +104,7 @@ describe('Garaje /garage', () => {
     for (const [method, path, body] of [
       ['GET', '/garage/ABC-123', undefined],
       ['PATCH', '/garage/ABC-123', { color: 'Negro' }],
-      ['DELETE', '/garage/ABC-123', undefined],
-      ['GET', '/garage/ABC-123/assessment', undefined]
+      ['DELETE', '/garage/ABC-123', undefined]
     ] as const) {
       assert.equal((await ctx.request(method, path, { token: luis, body })).status, 404, `${method} ${path}`);
     }
@@ -117,12 +113,9 @@ describe('Garaje /garage', () => {
     assert.equal((await ctx.request('GET', '/garage/ABC-123', { token: ana })).body.color, 'Rojo');
   });
 
-  it('GET /garage/:plate/assessment explica el concepto', async () => {
-    const response = await ctx.request('GET', '/garage/ABC-123/assessment', { token: ana });
-    assert.equal(response.status, 200);
-    assert.equal(response.body.verdict, 'Revisar');
-    assert.deepEqual(response.body.reasons.map((reason: { code: string }) => reason.code).sort(), ['MISSING_DATA', 'RTM_EXPIRING']);
-    assert.equal(response.body.basedOn.official, false);
+  it('las rutas retiradas ya no existen', async () => {
+    assert.equal((await ctx.request('GET', '/garage/ABC-123/assessment', { token: ana })).status, 404);
+    assert.equal((await ctx.request('POST', '/garage/ABC-123/refresh-from-runt', { token: ana, body: {} })).status, 404);
   });
 
   it('elimina un vehículo', async () => {
@@ -135,7 +128,7 @@ describe('Garaje /garage', () => {
     const token = await ctx.registerVerified('flota@example.com');
     const user = (await ctx.users.findByEmail('flota@example.com'))!;
     for (let index = 0; index < MAX_VEHICLES_PER_USER; index++) {
-      await ctx.garage.create(user.id, { ...sandero, plate: `FLT-${String(index).padStart(3, '0')}`, fuelType: 'Gasolina', serviceType: 'Particular', runtStatus: null, source: 'manual' });
+      await ctx.garage.create(user.id, { ...sandero, plate: `FLT-${String(index).padStart(3, '0')}`, fuelType: 'Gasolina', serviceType: 'Particular', source: 'manual' });
     }
     const response = await ctx.request('POST', '/garage', { token, body: { ...sandero, plate: 'FLT-999' } });
     assert.equal(response.status, 409);

@@ -23,9 +23,6 @@ interface UserVehicleRow {
   chassis: string | null;
   fuel_type: FuelType | null;
   service_type: ServiceType | null;
-  soat_expires_on: string | null;
-  rtm_expires_on: string | null;
-  runt_status: string | null;
   source: VehicleSource;
   created_at: Date;
   updated_at: Date;
@@ -43,9 +40,6 @@ const toRecord = (row: UserVehicleRow): GarageVehicleRecord => ({
   chassis: row.chassis,
   fuelType: row.fuel_type,
   serviceType: row.service_type,
-  soatExpiresOn: row.soat_expires_on,
-  rtmExpiresOn: row.rtm_expires_on,
-  runtStatus: row.runt_status,
   source: row.source,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString()
@@ -61,9 +55,6 @@ const COLUMNS: Record<keyof GarageVehiclePatch, string> = {
   chassis: 'chassis',
   fuelType: 'fuel_type',
   serviceType: 'service_type',
-  soatExpiresOn: 'soat_expires_on',
-  rtmExpiresOn: 'rtm_expires_on',
-  runtStatus: 'runt_status',
   source: 'source'
 };
 
@@ -89,13 +80,12 @@ export class PgGarageRepository implements GarageRepository {
     try {
       const { rows } = await this.pool.query<UserVehicleRow>(
         `INSERT INTO user_vehicles (
-           user_id, plate, brand, model, year, color, cylinder_cc, chassis, fuel_type, service_type,
-           soat_expires_on, rtm_expires_on, runt_status, source
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           user_id, plate, brand, model, year, color, cylinder_cc, chassis, fuel_type, service_type, source
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           userId, vehicle.plate, vehicle.brand, vehicle.model, vehicle.year, vehicle.color, vehicle.cylinderCc, vehicle.chassis,
-          vehicle.fuelType, vehicle.serviceType, vehicle.soatExpiresOn, vehicle.rtmExpiresOn, vehicle.runtStatus, vehicle.source
+          vehicle.fuelType, vehicle.serviceType, vehicle.source
         ]
       );
       return toRecord(rows[0]!);

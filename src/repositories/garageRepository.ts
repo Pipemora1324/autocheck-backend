@@ -6,7 +6,7 @@ export type FuelType = (typeof FUEL_TYPES)[number];
 export type ServiceType = (typeof SERVICE_TYPES)[number];
 export type VehicleSource = (typeof VEHICLE_SOURCES)[number];
 
-/** Campos que el usuario puede registrar o editar. Las fechas van como 'YYYY-MM-DD'. */
+/** Campos que el usuario puede registrar o editar. */
 export interface GarageVehicleData {
   brand: string;
   model: string;
@@ -16,9 +16,6 @@ export interface GarageVehicleData {
   chassis: string | null;
   fuelType: FuelType | null;
   serviceType: ServiceType | null;
-  soatExpiresOn: string | null;
-  rtmExpiresOn: string | null;
-  runtStatus: string | null;
 }
 
 export interface GarageVehicleRecord extends GarageVehicleData {

@@ -25,8 +25,6 @@ const text = (label: string, max: number) =>
 const optional = <T extends z.ZodType>(schema: T) =>
   z.preprocess((value) => (value === '' ? null : value), schema.nullable());
 
-const dateSchema = (label: string) => z.iso.date({ error: `${label} debe tener el formato AAAA-MM-DD.` });
-
 const vehicleFields = {
   brand: text('La marca', 60),
   model: text('El modelo o línea', 80),
@@ -49,10 +47,7 @@ const vehicleFields = {
       .pipe(z.string().regex(/^[A-Z0-9-]{5,30}$/, 'El chasis solo puede tener letras, números y guiones (5 a 30 caracteres).'))
   ),
   fuelType: optional(z.enum(FUEL_TYPES, { error: `El combustible debe ser uno de: ${FUEL_TYPES.join(', ')}.` })),
-  serviceType: optional(z.enum(SERVICE_TYPES, { error: `El servicio debe ser uno de: ${SERVICE_TYPES.join(', ')}.` })),
-  soatExpiresOn: optional(dateSchema('La fecha de vencimiento del SOAT')),
-  rtmExpiresOn: optional(dateSchema('La fecha de vencimiento de la RTM')),
-  runtStatus: optional(text('El estado RUNT', 40))
+  serviceType: optional(z.enum(SERVICE_TYPES, { error: `El servicio debe ser uno de: ${SERVICE_TYPES.join(', ')}.` }))
 };
 
 /** POST /garage. source 'scan' indica que el usuario confirmó datos precargados desde la tarjeta. */
@@ -66,9 +61,6 @@ export const createGarageVehicleSchema = z
     chassis: vehicleFields.chassis.default(null),
     fuelType: vehicleFields.fuelType.default(null),
     serviceType: vehicleFields.serviceType.default(null),
-    soatExpiresOn: vehicleFields.soatExpiresOn.default(null),
-    rtmExpiresOn: vehicleFields.rtmExpiresOn.default(null),
-    runtStatus: vehicleFields.runtStatus.default(null),
     source: z.enum(['manual', 'scan'], { error: 'source debe ser manual o scan.' }).default('manual')
   })
   .strict();

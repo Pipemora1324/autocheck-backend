@@ -22,7 +22,6 @@ export function createGarageRoutes(
   router.get('/garage/:plate', controller.get);
   router.patch('/garage/:plate', controller.update);
   router.delete('/garage/:plate', controller.remove);
-  router.get('/garage/:plate/assessment', controller.assessment);
   extra.after?.(router);
 
   return router;

@@ -38,6 +38,11 @@ export function createDiagnosisController(service: DiagnosisService) {
       response.set('Cache-Control', 'no-store').json(await service.list(currentUser(request).id, plate, page, limit));
     },
 
+    async get(request: Request, response: Response): Promise<void> {
+      const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
+      response.set('Cache-Control', 'no-store').json(await service.get(currentUser(request).id, plate, id));
+    },
+
     async remove(request: Request, response: Response): Promise<void> {
       const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
       await service.remove(currentUser(request).id, plate, id);

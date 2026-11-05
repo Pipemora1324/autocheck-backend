@@ -162,6 +162,9 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.deepEqual((await diagnoses.list(owner.id, first.id, { limit: 1, offset: 1 })).items.map((item) => item.id), [older.id]);
 
     assert.equal((await diagnoses.list(other.id, first.id, { limit: 10, offset: 0 })).total, 0);
+    assert.equal((await diagnoses.find(owner.id, first.id, older.id))?.descripcion, 'luz naranja');
+    assert.equal(await diagnoses.find(other.id, first.id, older.id), null);
+    assert.equal(await diagnoses.find(owner.id, second.id, older.id), null);
     assert.equal(await diagnoses.delete(other.id, first.id, older.id), false);
     assert.equal(await diagnoses.delete(owner.id, first.id, older.id), true);
     assert.equal((await diagnoses.list(owner.id, first.id, { limit: 10, offset: 0 })).total, 1);

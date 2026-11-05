@@ -72,6 +72,7 @@ export function createApp({ config, authService, garageService, cardScanService,
       after: (router) => {
         router.post('/garage/:plate/diagnoses', diagnosisLimit, diagnosisUpload, diagnosis.create);
         router.get('/garage/:plate/diagnoses', diagnosis.list);
+        router.get('/garage/:plate/diagnoses/:id', diagnosis.get);
         router.delete('/garage/:plate/diagnoses/:id', diagnosis.remove);
       }
     })

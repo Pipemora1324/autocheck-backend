@@ -147,6 +147,11 @@ export class MemoryDiagnosisRepository implements DiagnosisRepository {
     return { items: matching.slice(offset, offset + limit).map((item) => ({ ...item })), total: matching.length };
   }
 
+  async find(userId: string, vehicleId: string, id: string) {
+    const found = this.diagnoses.find((item) => item.userId === userId && item.vehicleId === vehicleId && item.id === id);
+    return found ? { ...found } : null;
+  }
+
   async delete(userId: string, vehicleId: string, id: string) {
     const index = this.diagnoses.findIndex((item) => item.userId === userId && item.vehicleId === vehicleId && item.id === id);
     if (index < 0) return false;

@@ -25,5 +25,6 @@ export interface DiagnosisRepository {
   create(diagnosis: NewDiagnosis): Promise<DiagnosisRecord>;
   /** Del más reciente al más antiguo. */
   list(userId: string, vehicleId: string, page: { limit: number; offset: number }): Promise<DiagnosisPage>;
+  find(userId: string, vehicleId: string, id: string): Promise<DiagnosisRecord | null>;
   delete(userId: string, vehicleId: string, id: string): Promise<boolean>;
 }

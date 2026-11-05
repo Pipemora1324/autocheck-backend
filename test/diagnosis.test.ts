@@ -675,6 +675,106 @@ describe('Historial de diagnósticos y aislamiento', () => {
   });
 });
 
+describe('GET /garage/:plate/diagnoses/:id', () => {
+  let ctx: TestContext;
+  let gemini: FakeGemini;
+  let ana: string;
+  let luis: string;
+
+  const manual = (telltaleId: string, fields: Record<string, string> = {}) =>
+    ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, fields: { telltaleId, ...fields } });
+  const detail = (id: string, token = ana, plate = PLATE) => ctx.request('GET', `/garage/${plate}/diagnoses/${id}`, { token });
+
+  before(async () => {
+    gemini = new FakeGemini();
+    // Con un límite de 1 por hora: si leer contara, el segundo GET o el POST de después fallarían.
+    ctx = await startTestApp({ telltaleIdentifier: gemini.identifier });
+    ana = await ctx.registerVerified('detalle.ana@example.com');
+    luis = await ctx.registerVerified('detalle.luis@example.com');
+    await addVehicle(ctx, ana);
+    await addVehicle(ctx, ana, 'XYZ-789');
+    await addVehicle(ctx, luis);
+  });
+  after(() => ctx.close());
+
+  it('devuelve la explicación completa desde el catálogo, sin crear otra entrada ni llamar a la IA', async () => {
+    const created = await manual('tpms', { description: 'una llanta baja' });
+    const telltale = findTelltale('tpms')!;
+    const stored = ctx.diagnoses.diagnoses.length;
+    gemini.calls.length = 0;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await detail(created.body.id);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      assert.equal(response.headers.get('ratelimit'), null);
+      assert.equal(response.body.id, created.body.id);
+      assert.equal(response.body.createdAt, created.body.createdAt);
+      assert.equal(response.body.origen, 'manual');
+      assert.equal(response.body.descripcion, 'una llanta baja');
+      assert.equal(response.body.telltale.id, 'tpms');
+      assert.equal(response.body.severidad, 'amarillo');
+      assert.equal(response.body.significado, telltale.significado);
+      assert.deepEqual(response.body.causasProbables, telltale.causasProbables);
+      assert.deepEqual(response.body.puedesRevisar, telltale.puedesRevisar);
+      assert.deepEqual(response.body.noHagas, telltale.noHagas);
+      assert.equal(response.body.cuandoIrAlMecanico, telltale.cuandoIrAlMecanico);
+      assert.equal(response.body.aviso, DIAGNOSIS_DISCLAIMER);
+      assert.equal(response.body.userId, undefined);
+      assert.equal(response.body.vehicleId, undefined);
+    }
+    assert.equal(ctx.diagnoses.diagnoses.length, stored);
+    assert.equal(gemini.calls.length, 0);
+  });
+
+  it('conserva la orden de detenerse de un check engine que parpadeó, y el historial lo refleja', async () => {
+    gemini.answer(recognized('check_engine', { colorObservado: 'amarillo', parpadeando: true, confianza: 0.9 }));
+    const created = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, fields: { description: 'parpadea' }, image: JPEG });
+    const response = await detail(created.body.id);
+    assert.equal(response.body.severidad, 'rojo');
+    assert.equal(response.body.origen, 'ia');
+    assert.equal(response.body.confianza, 0.9);
+    assert.equal(response.body.urgencia.debeDetenerse, true);
+    assert.equal(response.body.cuandoIrAlMecanico, findTelltale('check_engine')!.siParpadea!.cuandoIrAlMecanico);
+
+    const fixed = await manual('check_engine');
+    assert.equal((await detail(fixed.body.id)).body.severidad, 'amarillo');
+
+    const { body } = await ctx.request('GET', `/garage/${PLATE}/diagnoses?limit=50`, { token: ana });
+    const flag = (id: string) => body.items.find((item: { id: string }) => item.id === id).debeDetenerse;
+    assert.equal(flag(created.body.id), true);
+    assert.equal(flag(fixed.body.id), false);
+  });
+
+  it('airbag en el historial: rojo, sin orden de detenerse', async () => {
+    const created = await manual('airbag');
+    const response = await detail(created.body.id);
+    assert.equal(response.body.severidad, 'rojo');
+    assert.equal(response.body.urgencia.debeDetenerse, false);
+    const { body } = await ctx.request('GET', `/garage/${PLATE}/diagnoses?limit=50`, { token: ana });
+    assert.equal(body.items.find((item: { id: string }) => item.id === created.body.id).debeDetenerse, false);
+  });
+
+  it('solo el dueño del vehículo: otro usuario recibe 404, aunque tenga la misma placa', async () => {
+    const created = await manual('abs');
+    assert.equal((await detail(created.body.id, luis)).status, 404);
+    assert.equal((await detail(created.body.id, luis, 'XYZ-789')).status, 404);
+    assert.equal((await ctx.request('GET', `/garage/${PLATE}/diagnoses/${created.body.id}`)).status, 401);
+  });
+
+  it('404 si es de otro vehículo o no existe, 400 si el id no es un UUID, y 404 con código si salió del catálogo', async () => {
+    const created = await manual('abs');
+    assert.equal((await detail(created.body.id, ana, 'XYZ-789')).status, 404);
+    assert.equal((await detail('00000000-0000-4000-8000-000000000000')).status, 404);
+    assert.equal((await detail('no-es-un-uuid')).status, 400);
+
+    ctx.diagnoses.diagnoses.find((item) => item.id === created.body.id)!.telltaleId = 'retirado';
+    const removed = await detail(created.body.id);
+    assert.equal(removed.status, 404);
+    assert.equal(removed.body.code, 'TELLTALE_NOT_IN_CATALOG');
+  });
+});
+
 describe('composeDiagnosis', () => {
   const base = findTelltale('check_engine')!;
 

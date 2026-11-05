@@ -49,6 +49,11 @@ export class PgDiagnosisRepository implements DiagnosisRepository {
     return { items: items.rows.map(toRecord), total: total.rows[0]?.total ?? 0 };
   }
 
+  async find(userId: string, vehicleId: string, id: string): Promise<DiagnosisRecord | null> {
+    const { rows } = await this.pool.query<DiagnosisRow>('SELECT * FROM diagnoses WHERE user_id = $1 AND vehicle_id = $2 AND id = $3', [userId, vehicleId, id]);
+    return rows[0] ? toRecord(rows[0]) : null;
+  }
+
   async delete(userId: string, vehicleId: string, id: string): Promise<boolean> {
     const { rowCount } = await this.pool.query('DELETE FROM diagnoses WHERE user_id = $1 AND vehicle_id = $2 AND id = $3', [userId, vehicleId, id]);
     return (rowCount ?? 0) > 0;

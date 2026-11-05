@@ -94,6 +94,11 @@ export interface Diagnosed extends DiagnosisContent {
   createdAt: string;
 }
 
+/** Una entrada del historial con la explicación compuesta desde el catálogo vigente. */
+export interface DiagnosisDetail extends Diagnosed {
+  descripcion: string | null;
+}
+
 export interface NeedsBetterInput {
   status: 'needs_better_input';
   pista: string;
@@ -114,6 +119,7 @@ export interface DiagnosisHistoryItem {
   telltaleId: string;
   nombre: string | null;
   severidad: TelltaleSeverity;
+  debeDetenerse: boolean;
   origen: 'ia' | 'manual';
   confianza: number | null;
   descripcion: string | null;
@@ -256,6 +262,27 @@ export class DiagnosisService {
     return { items: items.map(toHistoryItem), page, limit, total, totalPages: Math.ceil(total / limit) };
   }
 
+  /**
+   * Solo lee: no crea otra entrada ni llama a la IA. El historial no guarda el texto, así que la explicación sale del catálogo vigente;
+   * del registro solo se usa si fue un parpadeo escalado a rojo. La nota del modelo no se guarda, por lo que aquí siempre es null.
+   */
+  async get(userId: string, plate: string, id: string): Promise<DiagnosisDetail> {
+    const vehicle = await this.findVehicle(userId, plate);
+    const record = await this.diagnoses.find(userId, vehicle.id, id);
+    if (!record) throw notFound('No encontramos ese diagnóstico en el historial de este vehículo.');
+    const telltale = findTelltale(record.telltaleId);
+    if (!telltale) throw notFound('Ese testigo ya no está en el catálogo, así que no podemos mostrar su explicación.', { code: 'TELLTALE_NOT_IN_CATALOG' });
+    return {
+      status: 'diagnosed',
+      id: record.id,
+      origen: record.confianza === null ? 'manual' : 'ia',
+      confianza: record.confianza,
+      createdAt: record.createdAt,
+      descripcion: record.descripcion,
+      ...composeDiagnosis(telltale, { fuelType: vehicle.fuelType, parpadeando: wasBlinking(record, telltale) })
+    };
+  }
+
   async remove(userId: string, plate: string, id: string): Promise<void> {
     const vehicle = await this.findVehicle(userId, plate);
     if (!(await this.diagnoses.delete(userId, vehicle.id, id))) throw notFound('No encontramos ese diagnóstico en el historial de este vehículo.');
@@ -296,11 +323,22 @@ export class DiagnosisService {
   }
 }
 
+/** Un testigo con siParpadea solo queda en rojo en el historial si se escaló por un parpadeo. */
+const wasBlinking = (record: DiagnosisRecord, telltale: Telltale): boolean => record.severidad === 'rojo' && telltale.severidad !== 'rojo' && Boolean(telltale.siParpadea);
+
+const mustStop = (record: DiagnosisRecord): boolean => {
+  const telltale = findTelltale(record.telltaleId);
+  // Si el testigo ya no está en el catálogo, se conserva lo más prudente según lo guardado.
+  if (!telltale) return record.severidad === 'rojo';
+  return telltale.neverDrive || wasBlinking(record, telltale);
+};
+
 const toHistoryItem = (record: DiagnosisRecord): DiagnosisHistoryItem => ({
   id: record.id,
   telltaleId: record.telltaleId,
   nombre: findTelltale(record.telltaleId)?.nombre ?? null,
   severidad: record.severidad,
+  debeDetenerse: mustStop(record),
   origen: record.confianza === null ? 'manual' : 'ia',
   confianza: record.confianza,
   descripcion: record.descripcion,

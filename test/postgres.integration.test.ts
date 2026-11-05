@@ -112,11 +112,12 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const other = (await users.create(newUser('garaje-otro-pg@example.com')))!;
     const base = {
       plate: 'ABC-123', brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: 1598, chassis: null,
-      fuelType: 'Gasolina' as const, serviceType: 'Particular' as const, source: 'manual' as const
+      fuelType: 'Gasolina' as const, serviceType: 'Particular' as const, mileageKm: 85000, source: 'manual' as const
     };
 
     const created = (await garage.create(owner.id, base))!;
     assert.equal(created.fuelType, 'Gasolina');
+    assert.equal(created.mileageKm, 85000);
     assert.equal(await garage.create(owner.id, base), null);
     assert.ok(await garage.create(other.id, base));
     await assert.rejects(garage.create(owner.id, { ...base, plate: 'ABC-1234' }), /user_vehicles_plate_format/);

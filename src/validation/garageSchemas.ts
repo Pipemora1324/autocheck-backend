@@ -47,7 +47,14 @@ const vehicleFields = {
       .pipe(z.string().regex(/^[A-Z0-9-]{5,30}$/, 'El chasis solo puede tener letras, números y guiones (5 a 30 caracteres).'))
   ),
   fuelType: optional(z.enum(FUEL_TYPES, { error: `El combustible debe ser uno de: ${FUEL_TYPES.join(', ')}.` })),
-  serviceType: optional(z.enum(SERVICE_TYPES, { error: `El servicio debe ser uno de: ${SERVICE_TYPES.join(', ')}.` }))
+  serviceType: optional(z.enum(SERVICE_TYPES, { error: `El servicio debe ser uno de: ${SERVICE_TYPES.join(', ')}.` })),
+  mileageKm: optional(
+    z.coerce
+      .number({ error: 'El kilometraje debe ser un número.' })
+      .int('El kilometraje va en km, sin decimales.')
+      .min(0, 'El kilometraje no puede ser negativo.')
+      .max(9_999_999, 'El kilometraje no puede superar 9.999.999 km.')
+  )
 };
 
 /** POST /garage. source 'scan' indica que el usuario confirmó datos precargados desde la tarjeta. */
@@ -61,6 +68,7 @@ export const createGarageVehicleSchema = z
     chassis: vehicleFields.chassis.default(null),
     fuelType: vehicleFields.fuelType.default(null),
     serviceType: vehicleFields.serviceType.default(null),
+    mileageKm: vehicleFields.mileageKm.default(null),
     source: z.enum(['manual', 'scan'], { error: 'source debe ser manual o scan.' }).default('manual')
   })
   .strict();

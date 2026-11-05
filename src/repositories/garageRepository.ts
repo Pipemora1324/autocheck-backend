@@ -16,6 +16,7 @@ export interface GarageVehicleData {
   chassis: string | null;
   fuelType: FuelType | null;
   serviceType: ServiceType | null;
+  mileageKm: number | null;
 }
 
 export interface GarageVehicleRecord extends GarageVehicleData {

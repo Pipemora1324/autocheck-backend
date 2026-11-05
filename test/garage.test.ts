@@ -13,7 +13,8 @@ const sandero = {
   cylinderCc: 1598,
   chassis: '9fbbsraddkm123456',
   fuelType: 'Gasolina',
-  serviceType: 'Particular'
+  serviceType: 'Particular',
+  mileageKm: 85000
 };
 
 describe('Garaje /garage', () => {
@@ -43,6 +44,7 @@ describe('Garaje /garage', () => {
     assert.equal(response.body.kind, 'carro');
     assert.equal(response.body.chassis, '9FBBSRADDKM123456');
     assert.equal(response.body.source, 'manual');
+    assert.equal(response.body.mileageKm, 85000);
     for (const removed of ['soat', 'rtm', 'soatExpiresOn', 'rtmExpiresOn', 'runtStatus']) assert.equal(response.body[removed], undefined, removed);
     assert.equal(response.body.userId, undefined);
     assert.equal(response.body.id, undefined);
@@ -53,6 +55,7 @@ describe('Garaje /garage', () => {
     assert.equal(response.status, 201);
     assert.equal(response.body.plate, 'XYZ-12D');
     assert.equal(response.body.kind, 'moto');
+    assert.equal(response.body.mileageKm, null);
   });
 
   it('rechaza placas inválidas, datos fuera de rango y campos no permitidos (como el documento del propietario)', async () => {
@@ -66,6 +69,10 @@ describe('Garaje /garage', () => {
     });
     assert.equal(badData.status, 400);
     assert.deepEqual(badData.body.errors.map((error: { field: string }) => error.field).sort(), ['fuelType', 'year']);
+
+    const badMileage = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-115', mileageKm: -1 } });
+    assert.equal(badMileage.status, 400);
+    assert.equal(badMileage.body.errors[0].field, 'mileageKm');
 
     const withOwner = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-112', ownerDocument: 'CC 123' } });
     assert.equal(withOwner.status, 400);
@@ -90,10 +97,11 @@ describe('Garaje /garage', () => {
 
     assert.equal((await ctx.request('GET', '/garage/abc123', { token: ana })).body.model, 'Sandero');
 
-    const patched = await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { color: 'Rojo', chassis: null } });
+    const patched = await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { color: 'Rojo', chassis: null, mileageKm: 90000 } });
     assert.equal(patched.status, 200);
     assert.equal(patched.body.color, 'Rojo');
     assert.equal(patched.body.chassis, null);
+    assert.equal(patched.body.mileageKm, 90000);
 
     assert.equal((await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: {} })).status, 400);
     assert.equal((await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { plate: 'ZZZ-999' } })).status, 400);

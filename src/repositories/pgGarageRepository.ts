@@ -23,6 +23,7 @@ interface UserVehicleRow {
   chassis: string | null;
   fuel_type: FuelType | null;
   service_type: ServiceType | null;
+  mileage_km: number | null;
   source: VehicleSource;
   created_at: Date;
   updated_at: Date;
@@ -40,6 +41,7 @@ const toRecord = (row: UserVehicleRow): GarageVehicleRecord => ({
   chassis: row.chassis,
   fuelType: row.fuel_type,
   serviceType: row.service_type,
+  mileageKm: row.mileage_km,
   source: row.source,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString()
@@ -55,6 +57,7 @@ const COLUMNS: Record<keyof GarageVehiclePatch, string> = {
   chassis: 'chassis',
   fuelType: 'fuel_type',
   serviceType: 'service_type',
+  mileageKm: 'mileage_km',
   source: 'source'
 };
 
@@ -80,12 +83,12 @@ export class PgGarageRepository implements GarageRepository {
     try {
       const { rows } = await this.pool.query<UserVehicleRow>(
         `INSERT INTO user_vehicles (
-           user_id, plate, brand, model, year, color, cylinder_cc, chassis, fuel_type, service_type, source
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           user_id, plate, brand, model, year, color, cylinder_cc, chassis, fuel_type, service_type, mileage_km, source
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
         [
           userId, vehicle.plate, vehicle.brand, vehicle.model, vehicle.year, vehicle.color, vehicle.cylinderCc, vehicle.chassis,
-          vehicle.fuelType, vehicle.serviceType, vehicle.source
+          vehicle.fuelType, vehicle.serviceType, vehicle.mileageKm, vehicle.source
         ]
       );
       return toRecord(rows[0]!);

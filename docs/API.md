@@ -2,6 +2,8 @@
 
 Contrato HTTP del backend para el frontend. Todas las respuestas son JSON en español.
 
+> **Diagnóstico de testigos:** el usuario registra sus vehículos en `/garage` y pide un diagnóstico con foto, descripción o eligiendo el testigo de `GET /telltales`. La IA solo identifica el testigo; todo el contenido sale del catálogo del servidor.
+
 - **Base URL**
   - Producción: `https://<proyecto>.vercel.app/api` (Vercel reenvía `/api/*` al backend en Render).
   - Desarrollo: `http://localhost:3000`.
@@ -27,7 +29,8 @@ Validación (400):
 | HTTP | `code` | Cuándo |
 | --- | --- | --- |
 | 400 | — | Validación (`errors[]`) o JSON mal formado |
-| 400 | `IMAGE_REQUIRED`, `INVALID_UPLOAD` | `scan-card` sin imagen o con otro campo |
+| 400 | `IMAGE_REQUIRED`, `INVALID_UPLOAD` | `scan-card` sin imagen, otro campo de archivo o un campo de texto demasiado grande |
+| 400 | `DIAGNOSIS_INPUT_REQUIRED`, `UNKNOWN_TELLTALE` | Diagnóstico sin foto, descripción ni testigo, o con un `telltaleId` fuera del catálogo |
 | 401 | — | Falta el token, es inválido o expiró. El frontend renueva con `/auth/refresh` y reintenta una vez |
 | 403 | `EMAIL_NOT_VERIFIED` | `/garage/*` con el correo sin confirmar |
 | 403 | `INVALID_PASSWORD` | `DELETE /auth/me` con contraseña incorrecta (no es 401, para no cerrar la sesión) |
@@ -37,7 +40,9 @@ Validación (400):
 | 415 | `UNSUPPORTED_IMAGE` | El archivo no es JPEG, PNG ni WEBP (se valida la firma real) |
 | 422 | `CARD_UNREADABLE`, `NOT_A_VEHICLE_DOCUMENT` | No se pudo leer la tarjeta |
 | 429 | `RATE_LIMITED` / — | Límite de intentos (ver tabla al final) |
-| 503 | `VISION_NOT_CONFIGURED`, `VISION_UNAVAILABLE` | Servicio opcional apagado o caído |
+| 503 | `VISION_NOT_CONFIGURED`, `VISION_UNAVAILABLE` | Lectura de tarjeta apagada o caída |
+| 503 | `AI_NOT_CONFIGURED`, `DIAGNOSIS_UNAVAILABLE` | Diagnóstico con IA apagado o caído. Ofrece elegir el testigo de la lista, que sigue funcionando |
+| 503 | `DIAGNOSIS_PROVIDER_BUSY` | El proveedor gratuito de IA está saturado (429). Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece la lista |
 | 503 | `SCAN_PROVIDER_BUSY` | El proveedor gratuito de lectura está saturado (429). Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece ingresar los datos a mano |
 
 ---
@@ -46,24 +51,32 @@ Validación (400):
 
 `GET /health` (público): `{ "status": "ok", "service": "AutoCheck-CO" }`.
 
-`GET /config/public` (público, sin token). Úsalo para mostrar el consentimiento del registro y el aviso antes de subir la foto de la tarjeta:
+`GET /config/public` (público, sin token). Úsalo para mostrar el consentimiento del registro y los avisos antes de subir la foto de la tarjeta o del tablero:
 
 ```json
 {
   "privacyPolicy": {
-    "version": "2026-11-02.2",
-    "registrationConsent": "Autorizo a AutoCheck-CO a tratar mis datos personales ... No subiré la tarjeta de otra persona sin su autorización."
+    "version": "2026-11-04.1",
+    "registrationConsent": "Autorizo a AutoCheck-CO a tratar mis datos personales ... La foto no se guarda en los servidores de AutoCheck-CO. El diagnóstico es orientación general y un mecánico debe confirmarlo."
   },
   "cardScan": {
     "enabled": true,
     "provider": "gemini",
     "notice": "La foto de la tarjeta se envía a Google (Gemini API, plan gratuito) solo para extraer los datos; ... En el plan gratuito, Google puede usar el contenido enviado para mejorar sus productos. ..."
+  },
+  "diagnosis": {
+    "enabled": true,
+    "provider": "gemini",
+    "manualSelection": true,
+    "notice": "La foto del tablero y tu descripción se envían a un proveedor externo de inteligencia artificial (Google, Gemini API, plan gratuito) ... La foto no se guarda en nuestros servidores. ..."
   }
 }
 ```
 
 - **`cardScan.provider`:** `gemini`, `anthropic` o `none`.
 - **`cardScan.notice`:** es `null` si la lectura está apagada.
+- **`diagnosis.enabled`:** indica si la **IA** está activa. Solo es `true` con `SCAN_PROVIDER=gemini` y clave. `manualSelection` siempre es `true`.
+- **`diagnosis.notice`:** muéstralo antes de subir la foto del tablero. Es `null` si la IA está apagada.
 
 ## Autenticación (`/auth`)
 
@@ -129,7 +142,7 @@ Validación (400):
 { "password": "tu contraseña" }
 ```
 
-- **Éxito:** `204`. Borra la cuenta, sus sesiones, sus tokens y los vehículos del garaje, y limpia la cookie.
+- **Éxito:** `204`. Borra la cuenta, sus sesiones, sus tokens, los vehículos del garaje y sus diagnósticos, y limpia la cookie.
 - **Contraseña incorrecta:** `403 INVALID_PASSWORD`.
 
 ### `POST /auth/verify-email`
@@ -204,7 +217,7 @@ Placas colombianas: `ABC-123` (carro) o `ABC-12D` (moto). Se aceptan en minúscu
 | `GET /garage/:plate` | — | Vehículo · `404` si no está en tu garaje |
 | `PATCH /garage/:plate` | Solo los campos a cambiar (`null` borra un dato opcional; la placa no se edita) | Vehículo |
 | `DELETE /garage/:plate` | — | `204` |
-| `GET /garage/capabilities` | — | `{ "cardScan": { "enabled": bool, "provider": "gemini" \| "anthropic" \| "none", "notice": string \| null } }` (igual que en `/config/public`) |
+| `GET /garage/capabilities` | — | `{ "cardScan": { "enabled": bool, "provider": "gemini" \| "anthropic" \| "none", "notice": string \| null }, "diagnosis": { "enabled": bool, "provider": "gemini" \| "none", "manualSelection": true, "notice": string \| null } }` (igual que en `/config/public`) |
 
 **Reglas de los campos:**
 
@@ -252,6 +265,122 @@ Lee la tarjeta de propiedad (licencia de tránsito) con visión, usando el prove
 
 ---
 
+## Testigos del tablero
+
+### `GET /telltales` (token)
+
+Catálogo resumido, para que el usuario elija el testigo a mano si la foto no se reconoce.
+
+```json
+{
+  "telltales": [
+    { "id": "presion_aceite", "nombre": "Presión de aceite", "alias": ["aceitera", "lámpara de aceite"], "severidad": "rojo" }
+  ]
+}
+```
+
+- **`severidad`:** `rojo`, `amarillo` o `informativo`.
+
+## Diagnósticos (`/garage/:plate/diagnoses`): token y correo verificado
+
+Solo sobre vehículos del usuario autenticado. Una placa ajena responde `404`.
+
+### `POST /garage/:plate/diagnoses`
+
+`multipart/form-data` con **al menos uno** de estos campos:
+
+| Campo | Tipo | Notas |
+| --- | --- | --- |
+| `image` | Archivo | JPEG, PNG o WEBP, validado por firma, de máximo 5 MB. Se procesa en memoria y no se guarda ni se registra |
+| `description` | Texto | Máximo 500 caracteres. Se guarda en el historial |
+| `telltaleId` | Texto | Un `id` de `GET /telltales`. Si viene, **no se llama a la IA**, y la foto no se envía a nadie |
+
+La elección manual también se acepta como JSON: `{ "telltaleId": "tpms" }`.
+
+Antes de subir la foto, muestra `diagnosis.notice`.
+
+**`201`, testigo identificado:**
+
+```json
+{
+  "status": "diagnosed",
+  "id": "uuid",
+  "origen": "ia",
+  "confianza": 0.93,
+  "createdAt": "2026-11-04T17:00:00.000Z",
+  "telltale": { "id": "presion_aceite", "nombre": "Presión de aceite", "descripcionSimbolo": "Aceitera roja, ..." },
+  "severidad": "rojo",
+  "urgencia": {
+    "semaforo": "rojo",
+    "titulo": "Detente",
+    "accion": "Detente en un lugar seguro en cuanto puedas, apaga el motor y llama a un taller o a una grúa. No sigas manejando.",
+    "debeDetenerse": true,
+    "esFalla": true
+  },
+  "significado": "El aceite no está llegando al motor con la presión necesaria. ...",
+  "causasProbables": ["Nivel de aceite muy bajo", "Fuga de aceite"],
+  "puedesRevisar": ["Con el motor apagado y en terreno plano, espera unos minutos y mira el nivel en la varilla."],
+  "noHagas": ["No sigas manejando para \"llegar al taller\"."],
+  "cuandoIrAlMecanico": "De inmediato y con grúa, ... Si se ignora, el motor puede fundirse en poco tiempo, ...",
+  "notaEspecificaDelVehiculo": null,
+  "avisoCompatibilidad": null,
+  "aviso": "Orientación general. Un mecánico debe confirmar el diagnóstico."
+}
+```
+
+**Cómo leer la respuesta:**
+
+- **`origen`:** `ia` o `manual`. En `manual`, `confianza` es `null`.
+- **`urgencia.semaforo`:** `rojo` (`debeDetenerse: true`), `amarillo` o `informativo` (`esFalla: false`: explica que no es una falla).
+- **`neverDrive`:** los testigos marcados así en el catálogo siempre responden rojo y con la orden de detenerse, aunque el modelo diga otra cosa. Incluyen presión de aceite, temperatura, frenos, airbag y dirección.
+- **`notaEspecificaDelVehiculo`:** texto corto del modelo, o `null`. El servidor la descarta en los testigos rojos, y si da consejos de manejo o incluye enlaces.
+- **`avisoCompatibilidad`:** aparece si el testigo no suele corresponder al combustible registrado. No oculta el diagnóstico.
+- Muestra siempre `aviso`.
+
+**`200`, no se pudo identificar con seguridad** (no reconoce el testigo, confianza menor a 0.6, varios posibles o salida inválida del modelo). No se inventa nada ni se guarda en el historial:
+
+```json
+{
+  "status": "needs_better_input",
+  "pista": "No pudimos identificar el testigo con seguridad. Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.",
+  "avisoSeguridad": "Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.",
+  "puedeElegirDeLaLista": true
+}
+```
+
+**Errores:** `400`, `404`, `413`, `415`, `429` y `503`, según la tabla de errores. Ante cualquier `503`, ofrece elegir el testigo de la lista.
+
+### `GET /garage/:plate/diagnoses`
+
+Historial del vehículo, del más reciente al más antiguo. Parámetros: `page` (por defecto 1) y `limit` (por defecto 20, máximo 50).
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "telltaleId": "tpms",
+      "nombre": "Presión de llantas (TPMS)",
+      "severidad": "amarillo",
+      "origen": "manual",
+      "confianza": null,
+      "descripcion": "una llanta baja",
+      "createdAt": "2026-11-04T17:00:00.000Z"
+    }
+  ],
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "totalPages": 1
+}
+```
+
+### `DELETE /garage/:plate/diagnoses/:id`
+
+`204`. `404` si no está en el historial de ese vehículo, y `400` si el `id` no es un UUID. Borrar el vehículo o la cuenta también borra su historial.
+
+---
+
 ## Límites de intentos
 
 | Ruta | Límite | Clave |
@@ -264,5 +393,6 @@ Lee la tarjeta de propiedad (licencia de tránsito) con visión, usando el prove
 | `POST /auth/resend-verification` | 5 / 15 min por IP, 3 / 15 min por correo | IP y correo |
 | `DELETE /auth/me` | 5 / 15 min | por IP |
 | `POST /garage/scan-card` | 10 / hora | por usuario |
+| `POST /garage/:plate/diagnoses` | 15 / hora, con o sin IA | por usuario |
 
 Las respuestas incluyen las cabeceras `RateLimit` y `RateLimit-Policy` (borrador 8 del IETF).

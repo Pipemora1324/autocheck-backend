@@ -31,8 +31,6 @@ export interface CardScanResult {
     serviceType: Prefilled<ServiceType>;
   };
   kind: VehicleKind | null;
-  /** Solo para la consulta opcional al proveedor RUNT. No se guarda en ningún lado. */
-  ownerDocument: Prefilled<string>;
   warnings: string[];
   stored: false;
   next: { confirmWith: 'POST /garage'; source: 'scan' };
@@ -146,7 +144,6 @@ export class CardScanService {
     return {
       vehicle,
       kind: vehicle.plate.value ? plateKind(vehicle.plate.value) : null,
-      ownerDocument: pick(raw.ownerDocument, text(30)),
       warnings,
       stored: false,
       next: { confirmWith: 'POST /garage', source: 'scan' }

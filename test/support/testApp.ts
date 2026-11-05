@@ -6,8 +6,6 @@ import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
 import type { CardScanner } from '../../src/services/cardScanner.js';
 import { CardScanService } from '../../src/services/cardScanService.js';
-import { NoVehicleLookupProvider, type VehicleLookupProvider } from '../../src/providers/VehicleLookupProvider.js';
-import { RuntLookupService } from '../../src/services/runtLookupService.js';
 import { GarageService } from '../../src/services/garageService.js';
 import type { Mailer } from '../../src/services/mailer.js';
 import { Argon2PasswordHasher } from '../../src/services/passwordHasher.js';
@@ -80,8 +78,7 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   resendVerificationMax: 1000,
   resendVerificationEmailMax: 1000,
   deleteAccountMax: 1000,
-  scanCardPerHour: 1000,
-  runtLookupPerHour: 1000
+  scanCardPerHour: 1000
 };
 
 export interface TestAppOptions {
@@ -89,8 +86,6 @@ export interface TestAppOptions {
   config?: Partial<AppDeps['config']>;
   /** null simula un servidor sin ANTHROPIC_API_KEY. */
   cardReader?: CardScanner | null;
-  /** Por defecto RUNT_PROVIDER=none. */
-  lookupProvider?: VehicleLookupProvider;
   /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */
   mailer?: Mailer;
   adminEmails?: string[];
@@ -157,7 +152,6 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     vehicleService,
     garageService,
     cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
-    runtLookupService: new RuntLookupService(options.lookupProvider ?? new NoVehicleLookupProvider(), garage, garageService),
     tokenService: tokens,
     users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }

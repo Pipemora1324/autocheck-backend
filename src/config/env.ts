@@ -45,13 +45,7 @@ const envSchema = z
     GEMINI_API_KEY: optionalString,
     GEMINI_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('gemini-3.5-flash-lite')),
     ANTHROPIC_API_KEY: optionalString,
-    ANTHROPIC_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('claude-sonnet-5-5')),
-    // Consulta RUNT por proveedor externo. none (por defecto) = solo garaje manual.
-    RUNT_PROVIDER: z.preprocess(
-      (value) => (value === '' || value === undefined ? undefined : String(value).toLowerCase()),
-      z.enum(['none', 'verifik'], { error: 'Debe ser none o verifik' }).default('none')
-    ),
-    VERIFIK_API_KEY: optionalString
+    ANTHROPIC_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('claude-sonnet-5-5'))
   })
   .superRefine((env, context) => {
     if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
@@ -66,9 +60,6 @@ const envSchema = z
       if (!/^https?:\/\/[^/\s*]+$/.test(origin)) {
         context.addIssue({ code: 'custom', path: ['CORS_ORIGIN'], message: `Origen inválido "${origin}": usa https://dominio sin / final ni comodines` });
       }
-    }
-    if (env.RUNT_PROVIDER === 'verifik' && !env.VERIFIK_API_KEY) {
-      context.addIssue({ code: 'custom', path: ['VERIFIK_API_KEY'], message: 'Es obligatoria cuando RUNT_PROVIDER=verifik' });
     }
     // SameSite=None solo es aceptado por los navegadores junto con Secure, que solo se activa en producción.
     if (env.COOKIE_SAMESITE === 'none' && env.NODE_ENV !== 'production') {
@@ -133,7 +124,6 @@ export interface AppConfig {
   cookie: CookieConfig;
   trustProxy: number;
   scan: ScanConfig;
-  runtProvider: { name: 'none' } | { name: 'verifik'; apiKey: string };
   databaseUrl: string;
   jwtSecret: string;
   jwtRefreshSecret: string;
@@ -166,7 +156,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     trustProxy: env.TRUST_PROXY ?? (isProduction ? 1 : 0),
     scan: toScanConfig(env),
-    runtProvider: env.RUNT_PROVIDER === 'verifik' && env.VERIFIK_API_KEY ? { name: 'verifik', apiKey: env.VERIFIK_API_KEY } : { name: 'none' },
     databaseUrl: env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
     jwtRefreshSecret: env.JWT_REFRESH_SECRET,

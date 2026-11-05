@@ -28,7 +28,6 @@ export interface RateLimitOptions {
   resendVerificationEmailMax?: number;
   deleteAccountMax?: number;
   scanCardPerHour?: number;
-  runtLookupPerHour?: number;
 }
 
 const limiter = (limit: number, message: string): RequestHandler =>

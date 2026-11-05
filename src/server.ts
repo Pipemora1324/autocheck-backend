@@ -10,11 +10,9 @@ import {
 import { PgGarageRepository } from './repositories/pgGarageRepository.js';
 import { PgVehicleRepository } from './repositories/pgVehicleRepository.js';
 import { AuthService } from './services/authService.js';
-import { createVehicleLookupProvider } from './providers/createVehicleLookupProvider.js';
 import { createCardScanner } from './services/createCardScanner.js';
 import { CardScanService } from './services/cardScanService.js';
 import { GarageService } from './services/garageService.js';
-import { RuntLookupService } from './services/runtLookupService.js';
 import { createMailer } from './services/mailer.js';
 import { Argon2PasswordHasher } from './services/passwordHasher.js';
 import { TokenService } from './services/tokenService.js';
@@ -49,12 +47,7 @@ function start(): void {
     adminEmails: config.adminEmails
   });
   const vehicleService = new VehicleService(new PgVehicleRepository(pool));
-  const garageRepository = new PgGarageRepository(pool);
-  const garageService = new GarageService(garageRepository);
-  const runtLookupService = new RuntLookupService(createVehicleLookupProvider(config.runtProvider), garageRepository, garageService);
-  if (config.runtProvider.name === 'verifik') {
-    console.warn('RUNT_PROVIDER=verifik: el adaptador es un esqueleto (ver src/providers/verifikProvider.ts) y responderá 501.');
-  }
+  const garageService = new GarageService(new PgGarageRepository(pool));
   const cardScanService = new CardScanService(createCardScanner(config.scan));
   if (config.scan.provider === 'none') {
     console.warn(
@@ -66,7 +59,7 @@ function start(): void {
     console.log(`Lectura de tarjeta: ${config.scan.provider} (${config.scan.model}).`);
   }
 
-  const app = createApp({ config, authService, vehicleService, garageService, cardScanService, runtLookupService, tokenService, users });
+  const app = createApp({ config, authService, vehicleService, garageService, cardScanService, tokenService, users });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });

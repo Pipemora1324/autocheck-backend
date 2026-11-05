@@ -17,13 +17,12 @@ export const rawCardExtractionSchema = z.object({
   chassis: field,
   fuelType: field,
   serviceType: field,
-  ownerDocument: field,
   warnings: z.array(z.string())
 });
 
 export type RawCardExtraction = z.infer<typeof rawCardExtractionSchema>;
 
-export const CARD_FIELDS = ['plate', 'brand', 'model', 'year', 'color', 'cylinderCc', 'chassis', 'fuelType', 'serviceType', 'ownerDocument'] as const;
+export const CARD_FIELDS = ['plate', 'brand', 'model', 'year', 'color', 'cylinderCc', 'chassis', 'fuelType', 'serviceType'] as const;
 
 export interface CardImage {
   data: Buffer;
@@ -59,6 +58,5 @@ Reglas:
 - plate: placa (por ejemplo ABC123 o ABC12D). brand: marca. model: línea (por ejemplo "Sandero" o "NMAX").
 - year: año del modelo (4 dígitos). cylinderCc: cilindraje en cc, solo el número. chassis: número de chasis o VIN.
 - fuelType: combustible. serviceType: servicio (Particular, Público, Oficial, Diplomático).
-- ownerDocument: tipo y número de identificación del propietario tal como aparece (por ejemplo "C.C. 12345678").
-  No devuelvas el nombre del propietario.
+- No devuelvas el nombre ni el documento de identificación del propietario.
 - warnings: avisos breves en español sobre la calidad de la imagen o datos dudosos. Lista vacía si no hay.`;

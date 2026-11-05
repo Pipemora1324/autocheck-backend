@@ -22,7 +22,6 @@ const extraction: RawCardExtraction = {
   chassis: { value: null, confidence: 0 },
   fuelType: { value: 'GASOLINA', confidence: 0.9 },
   serviceType: { value: 'PARTICULAR', confidence: 0.9 },
-  ownerDocument: { value: 'C.C. 79123456', confidence: 0.8 },
   warnings: []
 };
 

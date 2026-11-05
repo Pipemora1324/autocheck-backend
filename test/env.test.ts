@@ -50,7 +50,7 @@ describe('loadConfig', () => {
   it('en producción exige CORS_ORIGIN, APP_URL y el correo por Brevo, y nada de SMTP', () => {
     assert.throws(() => loadConfig({ ...valid, NODE_ENV: 'production' }), (error: Error) => {
       for (const name of ['CORS_ORIGIN', 'APP_URL', 'BREVO_API_KEY', 'MAIL_FROM']) assert.match(error.message, new RegExp(name));
-      assert.doesNotMatch(error.message, /SMTP_|ANTHROPIC|VERIFIK|ADMIN_EMAILS/);
+      assert.doesNotMatch(error.message, /SMTP_|ANTHROPIC|ADMIN_EMAILS/);
       return true;
     });
 
@@ -61,9 +61,8 @@ describe('loadConfig', () => {
   });
 
   it('arranca con las variables opcionales vacías, como las deja Render', () => {
-    const config = loadConfig({ ...production, SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: '', ANTHROPIC_API_KEY: '', VERIFIK_API_KEY: '', ADMIN_EMAILS: '', SMTP_HOST: '' });
+    const config = loadConfig({ ...production, SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: '', ANTHROPIC_API_KEY: '', ADMIN_EMAILS: '', SMTP_HOST: '' });
     assert.deepEqual(config.scan, { provider: 'none', missingKeyFor: 'gemini' });
-    assert.deepEqual(config.runtProvider, { name: 'none' });
     assert.deepEqual(config.adminEmails, []);
   });
 

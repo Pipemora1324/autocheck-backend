@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import type { GarageController } from '../controllers/garageController.js';
 
-/** Rutas extra del garaje (lectura de tarjeta, consulta RUNT) que se montan antes de las rutas con :plate. */
+/** Rutas extra del garaje: before se monta antes de las rutas con :plate (por ejemplo, la lectura de tarjeta). */
 export interface GarageExtraRoutes {
   before?: (router: Router) => void;
   after?: (router: Router) => void;

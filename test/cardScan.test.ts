@@ -33,7 +33,6 @@ const reading = (overrides: Partial<RawCardExtraction> = {}): RawCardExtraction 
   chassis: { value: '9FB BSRADD KM123456', confidence: 0.7 },
   fuelType: { value: 'GASOLINA', confidence: 0.9 },
   serviceType: { value: 'PARTICULAR', confidence: -0.2 },
-  ownerDocument: { value: OWNER_DOCUMENT, confidence: 0.85 },
   warnings: ['La esquina inferior está borrosa.'],
   ...overrides
 });
@@ -99,7 +98,7 @@ describe('POST /garage/scan-card', () => {
     assert.deepEqual(vehicle.serviceType, { value: 'Particular', confidence: 0 });
     assert.deepEqual(vehicle.color, { value: 'GRIS ESTRELLA', confidence: 1 });
     assert.equal(response.body.kind, 'carro');
-    assert.deepEqual(response.body.ownerDocument, { value: OWNER_DOCUMENT, confidence: 0.85 });
+    assert.equal(response.body.ownerDocument, undefined);
     assert.equal(response.body.stored, false);
     assert.deepEqual(response.body.next, { confirmWith: 'POST /garage', source: 'scan' });
 
@@ -190,12 +189,11 @@ describe('POST /garage/scan-card', () => {
     });
     afterEach(() => Object.assign(console, originals));
 
-    it('ni el documento del propietario ni la placa aparecen en la consola', async () => {
+    it('la placa no aparece en la consola', async () => {
       assert.equal((await scan(JPEG)).status, 200);
       reader.next = new CardReaderUnavailableError('x');
       await scan(JPEG);
       const output = captured.join('\n');
-      assert.doesNotMatch(output, /79123456/);
       assert.doesNotMatch(output, /ABC-?123/i);
     });
   });

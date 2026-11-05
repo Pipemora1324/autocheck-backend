@@ -53,7 +53,7 @@ export function createApp({ config, authService, garageService, cardScanService,
   app.get('/health', (_request, response) => {
     response.json({ status: 'ok', service: 'AutoCheck-CO' });
   });
-  const publicInfo = createConfigController(cardScanService);
+  const publicInfo = createConfigController(cardScanService, diagnosisService);
   app.get('/config/public', publicInfo.publicConfig);
 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));

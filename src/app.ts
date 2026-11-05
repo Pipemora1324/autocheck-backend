@@ -8,6 +8,7 @@ import { createAuthController } from './controllers/authController.js';
 import { cardImageUpload, createCardScanController } from './controllers/cardScanController.js';
 import { createConfigController } from './controllers/configController.js';
 import { createGarageController } from './controllers/garageController.js';
+import { createTelltaleController } from './controllers/telltaleController.js';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
 import type { UserRepository } from './repositories/authRepositories.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -53,6 +54,7 @@ export function createApp({ config, authService, garageService, cardScanService,
   app.get('/config/public', publicInfo.publicConfig);
 
   app.use(createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits)));
+  app.get('/telltales', authenticate, createTelltaleController().list);
   const cardScan = createCardScanController(cardScanService);
   const scanCardLimit = perUserHourlyLimiter(rateLimits?.scanCardPerHour ?? 10, 'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.');
   app.use(

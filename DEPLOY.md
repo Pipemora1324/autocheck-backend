@@ -196,7 +196,7 @@ Detalles del proveedor:
 
 - La imagen se procesa en memoria y no se guarda ni se registra.
 - El tipo se valida por la firma del archivo.
-- Máximo 5 MB, 10 lecturas de tarjeta y 15 diagnósticos por hora por usuario.
+- Máximo 5 MB, 10 lecturas de tarjeta, 15 diagnósticos con IA y 60 consultas de la lista por hora por usuario.
 - La lectura de tarjeta solo precarga datos: el usuario los confirma con `POST /garage`.
 - En el diagnóstico el modelo solo identifica el testigo; la respuesta sale del catálogo y no se le envía la placa.
 - Los logs no registran imágenes, descripciones ni placas.

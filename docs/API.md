@@ -35,14 +35,15 @@ Validación (400):
 | 403 | `EMAIL_NOT_VERIFIED` | `/garage/*` con el correo sin confirmar |
 | 403 | `INVALID_PASSWORD` | `DELETE /auth/me` con contraseña incorrecta (no es 401, para no cerrar la sesión) |
 | 404 | — | Recurso inexistente o vehículo que no está en tu garaje |
+| 404 | `TELLTALE_NOT_IN_CATALOG` | Detalle de un diagnóstico cuyo testigo salió del catálogo |
 | 409 | `DUPLICATE_PLATE`, `GARAGE_LIMIT_REACHED` / — | Placa repetida, más de 50 vehículos, o correo ya registrado |
 | 413 | `IMAGE_TOO_LARGE` | Imagen de más de 5 MB |
 | 415 | `UNSUPPORTED_IMAGE` | El archivo no es JPEG, PNG ni WEBP (se valida la firma real) |
 | 422 | `CARD_UNREADABLE`, `NOT_A_VEHICLE_DOCUMENT` | No se pudo leer la tarjeta |
-| 429 | `RATE_LIMITED` / — | Límite de intentos (ver tabla al final) |
+| 429 | `RATE_LIMITED` / — | **Límite propio de AutoCheck** por usuario o IP (ver tabla al final). En diagnósticos incluye `limite`: `ia`, `manual` o `total`. Con `ia`, ofrece la lista |
 | 503 | `VISION_NOT_CONFIGURED`, `VISION_UNAVAILABLE` | Lectura de tarjeta apagada o caída |
 | 503 | `AI_NOT_CONFIGURED`, `DIAGNOSIS_UNAVAILABLE` | Diagnóstico con IA apagado o caído. Ofrece elegir el testigo de la lista, que sigue funcionando |
-| 503 | `DIAGNOSIS_PROVIDER_BUSY` | El proveedor gratuito de IA está saturado (429). Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece la lista |
+| 503 | `DIAGNOSIS_PROVIDER_BUSY` | **Cuota del proveedor:** Gemini respondió 429, por su plan gratuito y no por este usuario. Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece la lista |
 | 503 | `SCAN_PROVIDER_BUSY` | El proveedor gratuito de lectura está saturado (429). Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece ingresar los datos a mano |
 
 ---
@@ -274,12 +275,13 @@ Catálogo resumido, para que el usuario elija el testigo a mano si la foto no se
 ```json
 {
   "telltales": [
-    { "id": "presion_aceite", "nombre": "Presión de aceite", "alias": ["aceitera", "lámpara de aceite"], "severidad": "rojo" }
+    { "id": "presion_aceite", "nombre": "Presión de aceite", "alias": ["aceitera", "lámpara de aceite"], "severidad": "rojo", "debeDetenerse": true }
   ]
 }
 ```
 
 - **`severidad`:** `rojo`, `amarillo` o `informativo`.
+- **`debeDetenerse`:** `true` si el testigo ordena detenerse. El airbag es `rojo` con `debeDetenerse: false`: no muestres "Detente" solo por el color.
 
 ## Diagnósticos (`/garage/:plate/diagnoses`): token y correo verificado
 
@@ -331,13 +333,22 @@ Antes de subir la foto, muestra `diagnosis.notice`.
 **Cómo leer la respuesta:**
 
 - **`origen`:** `ia` o `manual`. En `manual`, `confianza` es `null`.
-- **`urgencia.semaforo`:** `rojo` (`debeDetenerse: true`), `amarillo` o `informativo` (`esFalla: false`: explica que no es una falla).
-- **`neverDrive`:** los testigos marcados así en el catálogo siempre responden rojo y con la orden de detenerse, aunque el modelo diga otra cosa. Incluyen presión de aceite, temperatura, frenos, airbag y dirección.
+- **`urgencia.semaforo`:** `rojo`, `amarillo` o `informativo` (`esFalla: false`: explica que no es una falla).
+- **`urgencia.debeDetenerse`:** decide el aviso de detenerse, no el color. El airbag es `rojo` con `debeDetenerse: false` y `titulo: "Revísalo hoy"`: el vehículo puede moverse, pero no se debe depender de esa protección.
+- **`neverDrive`:** los testigos marcados así en el catálogo siempre responden rojo y con la orden de detenerse, aunque el modelo diga otra cosa. Incluyen presión de aceite, temperatura, frenos y dirección.
+- **Check engine parpadeando:** si el modelo informa un parpadeo, responde `severidad: "rojo"` y `debeDetenerse: true`, y así queda en el historial. Su severidad base en el catálogo sigue siendo `amarillo`. Una foto fija casi nunca demuestra un parpadeo: el modelo lo sabe sobre todo por la descripción del usuario.
 - **`notaEspecificaDelVehiculo`:** texto corto del modelo, o `null`. El servidor la descarta en los testigos rojos, y si da consejos de manejo o incluye enlaces.
 - **`avisoCompatibilidad`:** aparece si el testigo no suele corresponder al combustible registrado. No oculta el diagnóstico.
 - Muestra siempre `aviso`.
 
-**`200`, no se pudo identificar con seguridad** (no reconoce el testigo, confianza menor a 0.6, varios posibles o salida inválida del modelo). No se inventa nada ni se guarda en el historial:
+**`200`, no se pudo identificar con seguridad.** No se inventa nada ni se guarda en el historial. Ocurre en estos casos:
+
+- El modelo no reconoce el testigo, su confianza es menor a 0.6 o su salida es inválida.
+- El modelo duda entre dos testigos (`telltaleAlternativo`): nunca se elige uno.
+- El color observado es incompatible con el testigo, por ejemplo `nivel_aceite_bajo` en rojo o `sistema_frenos` en amarillo.
+- El color es desconocido y el testigo solo se distingue por el color de otro más grave (`nivel_aceite_bajo`, `nivel_refrigerante`).
+
+`pista` cambia según el caso y según si llegó una foto:
 
 ```json
 {
@@ -349,6 +360,14 @@ Antes de subir la foto, muestra `diagnosis.notice`.
 ```
 
 **Errores:** `400`, `404`, `413`, `415`, `429` y `503`, según la tabla de errores. Ante cualquier `503`, ofrece elegir el testigo de la lista.
+
+**`429 RATE_LIMITED` o `503 DIAGNOSIS_PROVIDER_BUSY`:**
+
+| | `429 RATE_LIMITED` | `503 DIAGNOSIS_PROVIDER_BUSY` |
+| --- | --- | --- |
+| Quién limita | AutoCheck, por usuario | Gemini, por su plan gratuito |
+| Cuándo pasa | El usuario superó su límite por hora | Gemini respondió 429, aunque el usuario esté dentro de su límite |
+| Qué hacer | Intentar más tarde. Con `limite: "ia"`, también elegir de la lista | Intentar en un minuto (`retryAfterSeconds`) o elegir de la lista |
 
 ### `GET /garage/:plate/diagnoses`
 
@@ -362,6 +381,7 @@ Historial del vehículo, del más reciente al más antiguo. Parámetros: `page` 
       "telltaleId": "tpms",
       "nombre": "Presión de llantas (TPMS)",
       "severidad": "amarillo",
+      "debeDetenerse": false,
       "origen": "manual",
       "confianza": null,
       "descripcion": "una llanta baja",
@@ -374,6 +394,21 @@ Historial del vehículo, del más reciente al más antiguo. Parámetros: `page` 
   "totalPages": 1
 }
 ```
+
+- **`severidad`:** la que se guardó al crear la entrada, incluido un check engine escalado a rojo.
+
+### `GET /garage/:plate/diagnoses/:id`
+
+Una entrada con su explicación completa. **Solo lee:** no crea otra entrada, no llama a la IA y no cuenta para ningún límite. Solo responde al dueño del vehículo.
+
+`200` con los mismos campos de `201` en `POST`, más `descripcion` (el texto del usuario, o `null`).
+
+- **Usa el catálogo vigente:** el historial guarda el id del testigo, no el texto. Si el catálogo cambió después, la explicación y la severidad son las actuales, y no necesariamente lo que el usuario leyó ese día.
+- **Se conserva de la entrada:** `origen`, `confianza`, `createdAt`, `descripcion` y si el check engine se escaló a rojo por un parpadeo.
+- **`notaEspecificaDelVehiculo`:** siempre `null`, porque la nota del modelo no se guarda.
+- **`avisoCompatibilidad`:** se calcula con el combustible actual del vehículo.
+
+**Errores:** `400` si el `id` no es un UUID. `404` si no está en el historial de ese vehículo o la placa no es tuya. `404 TELLTALE_NOT_IN_CATALOG` si el testigo salió del catálogo.
 
 ### `DELETE /garage/:plate/diagnoses/:id`
 
@@ -393,6 +428,12 @@ Historial del vehículo, del más reciente al más antiguo. Parámetros: `page` 
 | `POST /auth/resend-verification` | 5 / 15 min por IP, 3 / 15 min por correo | IP y correo |
 | `DELETE /auth/me` | 5 / 15 min | por IP |
 | `POST /garage/scan-card` | 10 / hora | por usuario |
-| `POST /garage/:plate/diagnoses` | 15 / hora, con o sin IA | por usuario |
+| `POST /garage/:plate/diagnoses` con foto o descripción (llama a la IA) | 15 / hora (`limite: "ia"`) | por usuario |
+| `POST /garage/:plate/diagnoses` con `telltaleId` (sin IA) | 60 / hora (`limite: "manual"`) | por usuario |
+| `POST /garage/:plate/diagnoses`, tope de todas las solicitudes, antes de procesar la subida | 75 / hora (`limite: "total"`) | por usuario |
+
+Los dos primeros contadores son independientes: agotar el de la IA no bloquea la lista, y usar la lista no gasta el cupo de la IA. Las solicitudes rechazadas con `4xx` (imagen inválida, placa ajena) no cuentan para ellos, pero sí para el tope. Sin IA configurada, no se gasta cupo de la IA. Leer el historial o el detalle no cuenta.
+
+Estos son los límites de AutoCheck (`429 RATE_LIMITED`). El cupo del proveedor es aparte: llega como `503 DIAGNOSIS_PROVIDER_BUSY`.
 
 Las respuestas incluyen las cabeceras `RateLimit` y `RateLimit-Policy` (borrador 8 del IETF).

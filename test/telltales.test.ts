@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
-import { findTelltale, TELLTALES } from '../src/data/telltales.js';
+import { coloresDe, findTelltale, TELLTALES } from '../src/data/telltales.js';
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
 describe('Catálogo de testigos', () => {
-  it('tiene entre 35 y 40 testigos con id estable y único', () => {
-    assert.ok(TELLTALES.length >= 35 && TELLTALES.length <= 40, `tiene ${TELLTALES.length}`);
+  it('tiene entre 35 y 45 testigos con id estable y único', () => {
+    assert.ok(TELLTALES.length >= 35 && TELLTALES.length <= 45, `tiene ${TELLTALES.length}`);
     assert.equal(new Set(TELLTALES.map((item) => item.id)).size, TELLTALES.length);
     for (const { id } of TELLTALES) assert.match(id, /^[a-z][a-z0-9_]+$/);
   });
@@ -17,13 +17,13 @@ describe('Catálogo de testigos', () => {
       'check_engine', 'presion_aceite', 'temperatura_motor', 'bateria_alternador', 'sistema_frenos', 'freno_mano', 'pastillas_freno', 'abs',
       'airbag', 'cinturon', 'tpms', 'direccion_asistida', 'control_estabilidad', 'combustible_bajo', 'nivel_refrigerante', 'limpiabrisas_bajo',
       'tapa_tanque', 'puerta_capo_baul', 'filtro_particulas', 'bujias_precalentamiento', 'mantenimiento', 'luces_altas', 'antiniebla_delanteras',
-      'antiniebla_traseras', 'direccionales', 'inmovilizador_llave', 'transmision', 'sistema_hibrido_electrico', 'crucero'
+      'antiniebla_traseras', 'direccionales', 'inmovilizador_llave', 'transmision', 'sistema_hibrido_electrico', 'crucero', 'epc', 'asistente_carril'
     ];
     for (const id of required) assert.ok(findTelltale(id), id);
   });
 
-  it('aceite, temperatura, frenos, airbag y dirección siempre son rojo con neverDrive', () => {
-    for (const id of ['presion_aceite', 'temperatura_motor', 'sistema_frenos', 'airbag', 'direccion_asistida']) {
+  it('aceite, temperatura, frenos y dirección siempre son rojo con neverDrive', () => {
+    for (const id of ['presion_aceite', 'temperatura_motor', 'sistema_frenos', 'direccion_asistida']) {
       const telltale = findTelltale(id)!;
       assert.equal(telltale.severidad, 'rojo', id);
       assert.equal(telltale.neverDrive, true, id);
@@ -37,6 +37,46 @@ describe('Catálogo de testigos', () => {
       assert.doesNotMatch(texts, /puedes? (seguir|continuar)|sigue manejando|llega(r)? al taller manejando/i, telltale.id);
       assert.match(telltale.noHagas.join(' '), /No sigas manejando|no sigas manejando/, telltale.id);
     }
+  });
+
+  it('airbag es rojo sin neverDrive: el vehículo puede moverse, pero no se debe depender de esa protección', () => {
+    const airbag = findTelltale('airbag')!;
+    assert.equal(airbag.severidad, 'rojo');
+    assert.equal(airbag.neverDrive, false);
+    const texts = [airbag.cuandoIrAlMecanico, ...airbag.puedesRevisar, ...airbag.noHagas].join(' ');
+    assert.doesNotMatch(texts, /no sigas manejando|antes de volver a manejar/i);
+    assert.match(airbag.cuandoIrAlMecanico, /puede moverse/);
+    assert.match(airbag.cuandoIrAlMecanico, /hoy mismo/i);
+    assert.match(airbag.cuandoIrAlMecanico, /escáner/);
+    assert.match(airbag.noHagas.join(' '), /conectores amarillos/);
+    assert.match(airbag.noHagas.join(' '), /No dependas de esa protección/);
+    assert.match(airbag.noHagas.join(' '), /pretensores/);
+  });
+
+  it('transmisión no pide dejar la palanca en neutro', () => {
+    const text = findTelltale('transmision')!.puedesRevisar.join(' ');
+    assert.match(text, /en P \(o con el freno de mano si es manual\)/);
+    assert.doesNotMatch(text, /neutro/);
+  });
+
+  it('incluye los alias colombianos y los testigos nuevos', () => {
+    assert.ok(findTelltale('presion_aceite')!.alias.includes('lámpara de Aladino'));
+    assert.ok(findTelltale('check_engine')!.alias.includes('motorcito'));
+    assert.equal(findTelltale('epc')!.severidad, 'amarillo');
+    assert.deepEqual(findTelltale('epc')!.aplicaA, ['gasolina', 'diesel']);
+    assert.equal(findTelltale('asistente_carril')!.severidad, 'informativo');
+  });
+
+  it('los colores admitidos incluyen el de la severidad y solo check engine cambia al parpadear', () => {
+    const severityColor = { rojo: 'rojo', amarillo: 'amarillo' } as const;
+    for (const item of TELLTALES) {
+      if (item.severidad === 'informativo') continue;
+      assert.ok(coloresDe(item).includes(severityColor[item.severidad]), item.id);
+    }
+    assert.deepEqual(TELLTALES.filter((item) => item.siParpadea).map((item) => item.id), ['check_engine']);
+    assert.equal(findTelltale('check_engine')!.severidad, 'amarillo');
+    assert.match(findTelltale('check_engine')!.siParpadea!.cuandoIrAlMecanico, /si se ignora/i);
+    assert.deepEqual(TELLTALES.filter((item) => item.exigeColor).map((item) => item.id).sort(), ['nivel_aceite_bajo', 'nivel_refrigerante']);
   });
 
   it('cada testigo tiene todo su contenido', () => {
@@ -86,8 +126,12 @@ describe('GET /telltales', () => {
     assert.equal(response.status, 200);
     assert.equal(response.body.telltales.length, TELLTALES.length);
     const item = response.body.telltales.find((telltale: { id: string }) => telltale.id === 'presion_aceite');
-    assert.deepEqual(Object.keys(item).sort(), ['alias', 'id', 'nombre', 'severidad']);
+    assert.deepEqual(Object.keys(item).sort(), ['alias', 'debeDetenerse', 'id', 'nombre', 'severidad']);
     assert.equal(item.severidad, 'rojo');
+    assert.equal(item.debeDetenerse, true);
+    const airbag = response.body.telltales.find((telltale: { id: string }) => telltale.id === 'airbag');
+    assert.equal(airbag.severidad, 'rojo');
+    assert.equal(airbag.debeDetenerse, false);
   });
 
   it('solo pide sesión: no exige correo verificado', async () => {

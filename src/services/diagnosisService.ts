@@ -14,6 +14,7 @@ import {
 export const MIN_CONFIDENCE = 0.6;
 export const DIAGNOSIS_DISCLAIMER = 'Orientación general. Un mecánico debe confirmar el diagnóstico.';
 export const NEVER_DRIVE_ACTION = 'Detente en un lugar seguro en cuanto puedas, apaga el motor y llama a un taller o a una grúa. No sigas manejando.';
+export const SAFETY_SYSTEM_ACTION = 'El vehículo puede moverse, pero esta protección puede no funcionar en un choque. No dependas de ella y llévalo a revisión hoy.';
 export const DIAGNOSIS_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de diagnóstico con IA está ocupado. Intenta en un minuto o elige el testigo de la lista.';
 export const WHILE_UNIDENTIFIED_WARNING = 'Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.';
 
@@ -101,6 +102,7 @@ export interface DiagnosisHistory {
 
 function urgencyFor(severity: TelltaleSeverity, stop: boolean): Urgency {
   if (stop) return { semaforo: 'rojo', titulo: 'Detente', accion: NEVER_DRIVE_ACTION, debeDetenerse: true, esFalla: true };
+  if (severity === 'rojo') return { semaforo: 'rojo', titulo: 'Revísalo hoy', accion: SAFETY_SYSTEM_ACTION, debeDetenerse: false, esFalla: true };
   if (severity === 'amarillo') {
     return {
       semaforo: 'amarillo',
@@ -128,11 +130,12 @@ function compatibilityWarning(telltale: Telltale, fuelType: FuelType | null): st
 /**
  * Compone la respuesta solo desde el catálogo. Las garantías de seguridad se aplican aquí, sin importar lo que diga el modelo:
  * neverDrive siempre es rojo con la orden de detenerse, y en un testigo rojo no se muestra la nota del modelo.
+ * Un rojo sin neverDrive (airbag) sigue siendo rojo, pero no ordena detenerse.
  */
 export function composeDiagnosis(telltale: Telltale, options: { note?: string | null; fuelType?: FuelType | null } = {}): DiagnosisContent {
-  const stop = telltale.neverDrive || telltale.severidad === 'rojo';
+  const stop = telltale.neverDrive;
   const severidad: TelltaleSeverity = stop ? 'rojo' : telltale.severidad;
-  const note = !stop && options.note && !UNSAFE_NOTE.test(options.note) ? options.note : null;
+  const note = severidad !== 'rojo' && options.note && !UNSAFE_NOTE.test(options.note) ? options.note : null;
   return {
     telltale: { id: telltale.id, nombre: telltale.nombre, descripcionSimbolo: telltale.descripcionSimbolo },
     severidad,

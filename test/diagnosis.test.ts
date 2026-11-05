@@ -6,7 +6,7 @@ import { findTelltale, TELLTALES, type Telltale } from '../src/data/telltales.js
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
 import { requestLogger, sanitizeUrlForLog } from '../src/middleware/requestLogger.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
-import { composeDiagnosis, DIAGNOSIS_DISCLAIMER, DIAGNOSIS_PROVIDER_BUSY_MESSAGE, NEVER_DRIVE_ACTION } from '../src/services/diagnosisService.js';
+import { composeDiagnosis, DIAGNOSIS_DISCLAIMER, DIAGNOSIS_PROVIDER_BUSY_MESSAGE, NEVER_DRIVE_ACTION, SAFETY_SYSTEM_ACTION } from '../src/services/diagnosisService.js';
 import { createTelltaleIdentifier, GeminiTelltaleIdentifier, TELLTALE_RESPONSE_SCHEMA } from '../src/services/geminiTelltaleIdentifier.js';
 import { DEFAULT_CLAVE, startTestApp, type TestContext } from './support/testApp.js';
 
@@ -218,6 +218,20 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
       assert.doesNotMatch(JSON.stringify(response.body), /puedes seguir manejando/i, telltale.id);
       assert.equal(ctx.diagnoses.diagnoses.at(-1)!.severidad, 'rojo', telltale.id);
     }
+  });
+
+  it('airbag: rojo, sin orden de detenerse y sin la nota del modelo', async () => {
+    gemini.answer(recognized('airbag', { notaEspecificaDelVehiculo: 'Queda junto al velocímetro.' }));
+    const response = await diagnose({}, JPEG);
+    assert.equal(response.status, 201);
+    assert.equal(response.body.severidad, 'rojo');
+    assert.equal(response.body.urgencia.semaforo, 'rojo');
+    assert.equal(response.body.urgencia.titulo, 'Revísalo hoy');
+    assert.equal(response.body.urgencia.accion, SAFETY_SYSTEM_ACTION);
+    assert.equal(response.body.urgencia.debeDetenerse, false);
+    assert.equal(response.body.notaEspecificaDelVehiculo, null);
+    assert.doesNotMatch(JSON.stringify(response.body), /no sigas manejando|lugar seguro/i);
+    assert.equal(ctx.diagnoses.diagnoses.at(-1)!.severidad, 'rojo');
   });
 
   it('la nota del modelo no puede dar consejos de manejo ni enlaces en otros testigos', async () => {

@@ -6,11 +6,14 @@ import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
 import type { CardScanner } from '../../src/services/cardScanner.js';
 import { CardScanService } from '../../src/services/cardScanService.js';
+import { DiagnosisService } from '../../src/services/diagnosisService.js';
+import type { TelltaleIdentifier } from '../../src/services/telltaleIdentifier.js';
 import { GarageService } from '../../src/services/garageService.js';
 import type { Mailer } from '../../src/services/mailer.js';
 import { Argon2PasswordHasher } from '../../src/services/passwordHasher.js';
 import { TokenService } from '../../src/services/tokenService.js';
 import {
+  MemoryDiagnosisRepository,
   MemoryGarageRepository,
   MemoryOneTimeTokenRepository,
   MemoryRefreshTokenRepository,
@@ -75,7 +78,8 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   resendVerificationMax: 1000,
   resendVerificationEmailMax: 1000,
   deleteAccountMax: 1000,
-  scanCardPerHour: 1000
+  scanCardPerHour: 1000,
+  diagnosesPerHour: 1000
 };
 
 export interface TestAppOptions {
@@ -83,6 +87,8 @@ export interface TestAppOptions {
   config?: Partial<AppDeps['config']>;
   /** null simula un servidor sin ANTHROPIC_API_KEY. */
   cardReader?: CardScanner | null;
+  /** null simula un servidor con SCAN_PROVIDER=none o sin GEMINI_API_KEY. */
+  telltaleIdentifier?: TelltaleIdentifier | null;
   /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */
   mailer?: Mailer;
   adminEmails?: string[];
@@ -94,6 +100,7 @@ export interface TestContext {
   verificationTokens: MemoryOneTimeTokenRepository;
   refreshTokens: MemoryRefreshTokenRepository;
   garage: MemoryGarageRepository;
+  diagnoses: MemoryDiagnosisRepository;
   mailer: CapturingMailer;
   tokens: TokenService;
   clock: { now: Date };
@@ -104,6 +111,8 @@ export interface TestContext {
   login(email: string, clave: string): Promise<TestResponse>;
   /** POST multipart/form-data con un archivo en el campo indicado. */
   upload(path: string, options: { token?: string; field?: string; data: Uint8Array; type?: string; filename?: string }): Promise<TestResponse>;
+  /** POST multipart/form-data con campos de texto y, opcionalmente, una imagen en el campo "image". */
+  postForm(path: string, options: { token?: string; fields?: Record<string, string>; image?: Uint8Array }): Promise<TestResponse>;
   close(): Promise<void>;
 }
 
@@ -113,11 +122,13 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   const verificationTokens = new MemoryOneTimeTokenRepository();
   const refreshTokens = new MemoryRefreshTokenRepository();
   const garage = new MemoryGarageRepository();
+  const diagnoses = new MemoryDiagnosisRepository();
   const mailer = new CapturingMailer();
   const tokens = new TokenService(TEST_ACCESS_SECRET, TEST_REFRESH_SECRET);
   const clock = { now: new Date() };
   users.onDelete.push((userId) => {
     garage.deleteAllFor(userId);
+    diagnoses.deleteWhere((item) => item.userId === userId);
     for (const [id, row] of refreshTokens.tokens) if (row.userId === userId) refreshTokens.tokens.delete(id);
   });
 
@@ -134,6 +145,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     now: () => clock.now
   });
   const garageService = new GarageService(garage);
+  garage.onDeleteVehicle.push((vehicleId) => diagnoses.deleteWhere((item) => item.vehicleId === vehicleId));
 
   const app = createApp({
     config: {
@@ -147,6 +159,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     authService,
     garageService,
     cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
+    diagnosisService: new DiagnosisService(garage, diagnoses, options.telltaleIdentifier ?? null),
     tokenService: tokens,
     users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }
@@ -183,6 +196,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     verificationTokens,
     refreshTokens,
     garage,
+    diagnoses,
     mailer,
     tokens,
     clock,
@@ -199,6 +213,14 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     async upload(path, { token, field = 'image', data, type = 'application/octet-stream', filename = 'tarjeta.jpg' }) {
       const form = new FormData();
       form.append(field, new Blob([new Uint8Array(data)], { type }), filename);
+      const response = await fetch(baseUrl + path, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const text = await response.text();
+      return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers, cookie: undefined };
+    },
+    async postForm(path, { token, fields = {}, image }) {
+      const form = new FormData();
+      for (const [name, value] of Object.entries(fields)) form.append(name, value);
+      if (image) form.append('image', new Blob([new Uint8Array(image)], { type: 'image/jpeg' }), 'tablero.jpg');
       const response = await fetch(baseUrl + path, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers, cookie: undefined };

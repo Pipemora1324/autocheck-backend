@@ -6,6 +6,7 @@ import type { AppConfig } from './config/env.js';
 import { createAuthController } from './controllers/authController.js';
 import { cardImageUpload, createCardScanController } from './controllers/cardScanController.js';
 import { createConfigController } from './controllers/configController.js';
+import { createDiagnosisController, diagnosisUpload } from './controllers/diagnosisController.js';
 import { createGarageController } from './controllers/garageController.js';
 import { createTelltaleController } from './controllers/telltaleController.js';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth.js';
@@ -17,6 +18,7 @@ import { createAuthRoutes } from './routes/authRoutes.js';
 import { createGarageRoutes } from './routes/garageRoutes.js';
 import type { AuthService } from './services/authService.js';
 import type { CardScanService } from './services/cardScanService.js';
+import type { DiagnosisService } from './services/diagnosisService.js';
 import type { GarageService } from './services/garageService.js';
 import type { TokenService } from './services/tokenService.js';
 
@@ -25,12 +27,13 @@ export interface AppDeps {
   authService: AuthService;
   garageService: GarageService;
   cardScanService: CardScanService;
+  diagnosisService: DiagnosisService;
   tokenService: TokenService;
   users: UserRepository;
   rateLimits?: RateLimitOptions;
 }
 
-export function createApp({ config, authService, garageService, cardScanService, tokenService, users, rateLimits }: AppDeps): Express {
+export function createApp({ config, authService, garageService, cardScanService, diagnosisService, tokenService, users, rateLimits }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
   const requireVerified = requireVerifiedEmail(users);
@@ -57,12 +60,19 @@ export function createApp({ config, authService, garageService, cardScanService,
   app.get('/telltales', authenticate, createTelltaleController().list);
   const cardScan = createCardScanController(cardScanService);
   const scanCardLimit = perUserHourlyLimiter(rateLimits?.scanCardPerHour ?? 10, 'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.');
+  const diagnosis = createDiagnosisController(diagnosisService);
+  const diagnosisLimit = perUserHourlyLimiter(rateLimits?.diagnosesPerHour ?? 15, 'Alcanzaste el máximo de 15 diagnósticos por hora. Intenta más tarde.');
   app.use(
     createGarageRoutes(createGarageController(garageService), authenticate, requireVerified, {
       // El límite va antes de multer para no procesar subidas que se van a rechazar.
       before: (router) => {
         router.get('/garage/capabilities', publicInfo.capabilities);
         router.post('/garage/scan-card', scanCardLimit, cardImageUpload, cardScan.scan);
+      },
+      after: (router) => {
+        router.post('/garage/:plate/diagnoses', diagnosisLimit, diagnosisUpload, diagnosis.create);
+        router.get('/garage/:plate/diagnoses', diagnosis.list);
+        router.delete('/garage/:plate/diagnoses/:id', diagnosis.remove);
       }
     })
   );

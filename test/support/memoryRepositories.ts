@@ -8,6 +8,7 @@ import type {
   UserRepository,
   UserRole
 } from '../../src/repositories/authRepositories.js';
+import type { DiagnosisRecord, DiagnosisRepository, NewDiagnosis } from '../../src/repositories/diagnosisRepository.js';
 import type {
   GarageRepository,
   GarageVehiclePatch,
@@ -130,8 +131,39 @@ export class MemoryRefreshTokenRepository implements RefreshTokenRepository {
   }
 }
 
+export class MemoryDiagnosisRepository implements DiagnosisRepository {
+  readonly diagnoses: DiagnosisRecord[] = [];
+  private sequence = 0;
+
+  async create(diagnosis: NewDiagnosis) {
+    // La secuencia hace estable el orden aunque dos filas caigan en el mismo milisegundo.
+    const record: DiagnosisRecord = { ...diagnosis, id: randomUUID(), createdAt: new Date(Date.now() + this.sequence++).toISOString() };
+    this.diagnoses.push(record);
+    return { ...record };
+  }
+
+  async list(userId: string, vehicleId: string, { limit, offset }: { limit: number; offset: number }) {
+    const matching = this.diagnoses.filter((item) => item.userId === userId && item.vehicleId === vehicleId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { items: matching.slice(offset, offset + limit).map((item) => ({ ...item })), total: matching.length };
+  }
+
+  async delete(userId: string, vehicleId: string, id: string) {
+    const index = this.diagnoses.findIndex((item) => item.userId === userId && item.vehicleId === vehicleId && item.id === id);
+    if (index < 0) return false;
+    this.diagnoses.splice(index, 1);
+    return true;
+  }
+
+  /** Simula los ON DELETE CASCADE de la base. */
+  deleteWhere(predicate: (item: DiagnosisRecord) => boolean) {
+    for (let index = this.diagnoses.length - 1; index >= 0; index--) if (predicate(this.diagnoses[index]!)) this.diagnoses.splice(index, 1);
+  }
+}
+
 export class MemoryGarageRepository implements GarageRepository {
   readonly vehicles: GarageVehicleRecord[] = [];
+  /** Simula el ON DELETE CASCADE del historial. */
+  readonly onDeleteVehicle: Array<(vehicleId: string) => void> = [];
 
   async list(userId: string) {
     return this.vehicles.filter((item) => item.userId === userId).sort((a, b) => a.plate.localeCompare(b.plate)).map((item) => ({ ...item }));
@@ -165,7 +197,8 @@ export class MemoryGarageRepository implements GarageRepository {
   async delete(userId: string, plate: string) {
     const index = this.vehicles.findIndex((item) => item.userId === userId && item.plate === plate);
     if (index < 0) return false;
-    this.vehicles.splice(index, 1);
+    const [removed] = this.vehicles.splice(index, 1);
+    for (const listener of this.onDeleteVehicle) listener(removed!.id);
     return true;
   }
 

@@ -1,16 +1,14 @@
 # AutoCheck-CO Backend
 
-API REST en Express 5 + TypeScript para AutoCheck-CO: registrar vehículos colombianos en un garaje personal, ver las vigencias de SOAT y RTM, obtener un concepto ("Sin alertas" / "Revisar" / "No recomendado") y consultar un informe de peritaje de demostración. Usa Postgres (Neon) y autenticación propia con JWT.
+API REST en Express 5 + TypeScript para AutoCheck-CO: registrar vehículos colombianos en un garaje personal. Usa Postgres (Neon) y autenticación propia con JWT.
 
 ## Qué es real, qué es de demostración y qué depende de terceros
 
 | Parte | Estado |
 | --- | --- |
 | Cuentas, login, sesiones con refresh rotativo, verificación de correo, recuperación de contraseña, borrado de cuenta, admin por `ADMIN_EMAILS` | **Real**: funciona contra Postgres |
-| Garaje (`/garage`): vehículos que registra cada usuario, vigencias de SOAT/RTM y concepto | **Real**, pero calculado **solo con los datos que el usuario registra**. No es una consulta oficial (lo declara `basedOn`) |
-| Informe de peritaje (`/vehicles`): placas ABC-1234, DEF-5678 y GHI-9012 con inspecciones | **Solo demostración**: datos ficticios cargados por una migración. No es el flujo real (que es `/garage`) y se eliminará más adelante |
+| Garaje (`/garage`): vehículos que registra cada usuario | **Real**, con **solo los datos que el usuario registra**. No es una consulta oficial |
 | Lectura de la tarjeta de propiedad (`POST /garage/scan-card`) | **Real**, con un **proveedor externo** intercambiable (`SCAN_PROVIDER`): Gemini (plan gratuito, recomendado) o Anthropic. Apagada con `none` o sin la clave del proveedor |
-| Consulta RUNT (`POST /garage/:plate/refresh-from-runt`) | **Proveedor externo**, apagada por defecto (`RUNT_PROVIDER=none`). El adaptador de Verifik es un **esqueleto** hasta confirmar su contrato. No hay scraping de RUNT |
 | Correo (verificación y recuperación) | **Proveedor externo**: Brevo por HTTPS en producción (Render gratuito bloquea SMTP). En desarrollo los enlaces salen por consola |
 
 ## Requisitos
@@ -23,7 +21,7 @@ API REST en Express 5 + TypeScript para AutoCheck-CO: registrar vehículos colom
 ```bash
 cp .env.example .env   # completa DATABASE_URL, JWT_SECRET y JWT_REFRESH_SECRET
 npm install
-npm run migrate        # crea las tablas y carga los datos de demostración
+npm run migrate        # crea las tablas
 npm run dev
 ```
 
@@ -42,7 +40,7 @@ Las variables se validan al arrancar con zod; si falta o es inválida alguna, el
 | `npm run migrate:prod` | Migraciones desde `dist/` (lo usa Render al arrancar) |
 | `npm test`             | Pruebas con el test runner de Node                    |
 
-Las pruebas usan repositorios en memoria, un lector de tarjetas y un proveedor RUNT simulados: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
+Las pruebas usan repositorios en memoria, y un lector de tarjetas simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
 
 ## Endpoints
 
@@ -53,13 +51,8 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 - **Con token y correo verificado** (si no: `403 EMAIL_NOT_VERIFIED`):
   - `GET/POST /garage`
   - `GET/PATCH/DELETE /garage/:plate`
-  - `GET /garage/:plate/assessment`
   - `GET /garage/capabilities`
   - `POST /garage/scan-card`
-  - `POST /garage/:plate/refresh-from-runt`
-  - `/vehicles/*`: **solo demostración**, 3 placas ficticias; editar inspecciones exige rol `admin`. El flujo real es `/garage`
-
-Las vigencias (`Vigente`, `Por Vencer` a 30 días o menos, `Vencido`) se calculan en cada consulta con la fecha de hoy en Colombia (`America/Bogota`).
 
 ## Tratamiento de datos personales (Ley 1581 de 2012)
 
@@ -83,7 +76,7 @@ Las vigencias (`Vigente`, `Por Vencer` a 30 días o menos, `Vencido`) se calcula
 | Rol, fechas de registro, verificación y aceptación | `users` | Control de acceso y evidencia del consentimiento |
 | Sesiones | `refresh_tokens` | Identificador y vigencia de cada sesión (no el token) para poder revocarlas |
 | Tokens de verificación y recuperación | `email_verification_tokens`, `password_reset_tokens` | Solo el hash sha256; expiran en 24 h y 30 min y son de un solo uso |
-| Vehículos del garaje | `user_vehicles` | Datos que el usuario registra (placa, marca, modelo, vigencias de SOAT/RTM, etc.) para calcular alertas. **No** se guarda el documento del propietario |
+| Vehículos del garaje | `user_vehicles` | Datos que el usuario registra (placa, marca, línea, año, color, combustible, kilometraje, etc.). **No** se guarda el documento del propietario |
 | Registros técnicos | Logs de Render | IP, método, ruta, código de respuesta y hora, para seguridad y diagnóstico. No se registran cuerpos de petición, tokens ni datos extraídos de documentos |
 
 **Encargados externos**
@@ -101,11 +94,8 @@ Las vigencias (`Vigente`, `Por Vencer` a 30 días o menos, `Vencido`) se calcula
   - Ambos están en EE. UU., lo que implica una transmisión internacional de datos.
 - **Plan gratuito de Gemini:** Google puede usar el contenido enviado, incluida la foto, para mejorar sus productos.
 - **Qué hace AutoCheck-CO con ella:** la recibe en memoria y la descarta al terminar la petición. No la escribe en disco ni en la base de datos, y no la registra en logs.
-- **Datos extraídos:** se devuelven únicamente al usuario para que los confirme, incluido el documento del propietario. No se guardan ni se escriben en logs.
-- **Documento del propietario:** solo se usa, si el usuario lo decide, para la consulta al proveedor RUNT.
+- **Datos extraídos:** se devuelven únicamente al usuario para que los confirme. No se guardan ni se escriben en logs. El documento y el nombre del propietario no se extraen.
 - **Tarjetas ajenas:** **no se debe subir la tarjeta de otra persona sin su autorización.** El usuario lo declara al aceptar la política.
-
-**Consulta a proveedor RUNT** (desactivada por defecto). Si se activa, la placa y el documento del propietario se envían al proveedor configurado solo cuando el usuario lo pide y con consentimiento explícito en cada consulta (`consent: true`).
 
 **Derechos del titular**
 
@@ -123,16 +113,15 @@ src/config/          Validación de variables de entorno (zod)
 src/db/              Pool de conexiones y runner de migraciones
 src/routes/          Definición de rutas
 src/domain/          Placas colombianas y firma de imágenes
-src/providers/       Proveedores externos de consulta RUNT (none, verifik)
 src/controllers/     Validación de entrada y respuesta HTTP
-src/services/        Reglas de negocio (auth, garaje, concepto, lectura de tarjeta, correo)
+src/services/        Reglas de negocio (auth, garaje, lectura de tarjeta, correo)
 src/repositories/    Acceso a datos (Postgres)
-src/middleware/      Auth, roles, rate limit y manejo de errores
+src/middleware/      Auth, rate limit y manejo de errores
 ```
 
 ## Despliegue
 
-Ver [DEPLOY.md](DEPLOY.md): Neon, Render, Vercel, SMTP, Anthropic, proveedor RUNT y la lista de pasos manuales pendientes.
+Ver [DEPLOY.md](DEPLOY.md): Neon, Render, Vercel, Brevo, Gemini y la lista de pasos manuales pendientes.
 
 ## Frontend
 

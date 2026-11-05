@@ -15,6 +15,9 @@ coverage/
 supabase/.temp/
 .supabase/
 
+# Imagenes locales de npm run eval:telltales
+eval-images/
+
 # Logs y temporales
 *.log
 npm-debug.log*

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { MAX_CARD_IMAGE_BYTES } from '../src/controllers/cardScanController.js';
-import { findTelltale, TELLTALES, type Telltale } from '../src/data/telltales.js';
+import { coloresDe, findTelltale, TELLTALES, type Telltale } from '../src/data/telltales.js';
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
 import { requestLogger, sanitizeUrlForLog } from '../src/middleware/requestLogger.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
@@ -43,6 +43,9 @@ const recognized = (telltaleId: string | null, overrides: Record<string, unknown
   telltaleId,
   nombreDetectado: 'Algo',
   confianza: 0.93,
+  colorObservado: 'desconocido',
+  parpadeando: null,
+  telltaleAlternativo: null,
   notaEspecificaDelVehiculo: null,
   pideMejorEntrada: false,
   ...overrides
@@ -122,8 +125,12 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
     assert.deepEqual(body.response_format, { type: 'text', mime_type: 'application/json', schema: TELLTALE_RESPONSE_SCHEMA });
     assert.deepEqual(body.input[1], { type: 'image', data: Buffer.from(JPEG).toString('base64'), mime_type: 'image/jpeg' });
     for (const telltale of TELLTALES) {
-      assert.ok(prompt.includes(telltale.id), telltale.id);
-      assert.ok(prompt.includes(telltale.alias[0]!), telltale.alias[0]);
+      const line = prompt.split('\n').find((item) => item.startsWith(`- ${telltale.id} |`));
+      assert.ok(line, telltale.id);
+      assert.ok(line.includes(telltale.alias[0]!), telltale.alias[0]);
+      assert.ok(line.includes(telltale.descripcionSimbolo), `símbolo de ${telltale.id}`);
+      assert.ok(line.includes(`severidad típica: ${telltale.severidad}`), `severidad de ${telltale.id}`);
+      assert.ok(line.includes(`colores típicos: ${coloresDe(telltale).join(', ')}`), `colores de ${telltale.id}`);
     }
     assert.match(prompt, /"marca":"Renault"/);
     assert.match(prompt, /"linea":"Sandero"/);
@@ -158,6 +165,151 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
       for (const invented of ['significado', 'causasProbables', 'telltale', 'severidad', 'urgencia']) assert.equal(response.body[invented], undefined, invented);
     }
     assert.equal(ctx.diagnoses.diagnoses.filter((item) => item.userId === user.id).length, stored);
+  });
+
+  describe('validación cruzada del color', () => {
+    const storedCount = () => ctx.diagnoses.diagnoses.length;
+
+    it('color incompatible en pares parecidos: pide repetir la foto o elegir de la lista, sin guardar', async () => {
+      for (const [id, color] of [
+        ['nivel_aceite_bajo', 'rojo'],
+        ['presion_aceite', 'amarillo'],
+        ['abs', 'rojo'],
+        ['sistema_frenos', 'amarillo'],
+        ['nivel_refrigerante', 'rojo'],
+        ['temperatura_motor', 'azul'],
+        ['combustible_bajo', 'rojo']
+      ]) {
+        const before = storedCount();
+        gemini.answer(recognized(id!, { colorObservado: color, confianza: 0.99 }));
+        const response = await diagnose({}, JPEG);
+        assert.equal(response.status, 200, `${id} ${color}`);
+        assert.equal(response.body.status, 'needs_better_input', `${id} ${color}`);
+        assert.match(response.body.pista, /no coincide/);
+        assert.match(response.body.pista, /otra foto/);
+        assert.match(response.body.pista, /elígelo de la lista/);
+        assert.equal(response.body.telltale, undefined);
+        assert.equal(storedCount(), before);
+      }
+    });
+
+    it('sin foto, la pista no pide repetirla', async () => {
+      gemini.answer(recognized('abs', { colorObservado: 'rojo' }));
+      const response = await diagnose({ description: 'una luz roja que dice ABS' });
+      assert.match(response.body.pista, /no coincide/);
+      assert.match(response.body.pista, /color y su forma/);
+      assert.doesNotMatch(response.body.pista, /otra foto/);
+    });
+
+    it('un color compatible se acepta, incluidas las excepciones del catálogo', async () => {
+      for (const [id, color] of [
+        ['presion_aceite', 'rojo'],
+        ['nivel_aceite_bajo', 'amarillo'],
+        ['sistema_frenos', 'rojo'],
+        ['abs', 'amarillo'],
+        ['airbag', 'amarillo'],
+        ['freno_mano', 'rojo'],
+        ['cinturon', 'rojo'],
+        ['luces_altas', 'azul'],
+        ['direccionales', 'verde']
+      ]) {
+        gemini.answer(recognized(id!, { colorObservado: color }));
+        const response = await diagnose({}, JPEG);
+        assert.equal(response.body.status, 'diagnosed', `${id} ${color}`);
+        assert.equal(response.body.telltale.id, id);
+      }
+    });
+
+    it('con color desconocido, el testigo leve de un par se rechaza y el grave se acepta', async () => {
+      gemini.answer(recognized('nivel_aceite_bajo', { colorObservado: 'desconocido' }));
+      const mild = await diagnose({}, JPEG);
+      assert.equal(mild.body.status, 'needs_better_input');
+      assert.match(mild.body.pista, /confirmar el color/);
+
+      gemini.answer(recognized('presion_aceite', { colorObservado: 'desconocido' }));
+      assert.equal((await diagnose({}, JPEG)).body.severidad, 'rojo');
+
+      gemini.answer(recognized('abs', { colorObservado: 'desconocido' }));
+      assert.equal((await diagnose({ description: 'dice ABS' })).body.status, 'diagnosed');
+    });
+
+    it('un color fuera de la lista o la ausencia de los campos nuevos invalidan la respuesta', async () => {
+      gemini.answer(recognized('check_engine', { colorObservado: 'morado' }));
+      assert.equal((await diagnose({}, JPEG)).body.status, 'needs_better_input');
+      const { colorObservado: _color, ...sinColor } = recognized('check_engine');
+      gemini.answer(sinColor);
+      assert.equal((await diagnose({}, JPEG)).body.status, 'needs_better_input');
+      const { parpadeando: _blink, ...sinParpadeo } = recognized('check_engine');
+      gemini.answer(sinParpadeo);
+      assert.equal((await diagnose({}, JPEG)).body.status, 'needs_better_input');
+    });
+
+    it('el esquema enviado a Gemini exige color y parpadeo', () => {
+      const required = TELLTALE_RESPONSE_SCHEMA.required;
+      for (const field of ['colorObservado', 'parpadeando', 'telltaleAlternativo']) assert.ok(required.includes(field), field);
+      assert.deepEqual(TELLTALE_RESPONSE_SCHEMA.properties.colorObservado.enum, ['rojo', 'amarillo', 'verde', 'azul', 'blanco', 'desconocido']);
+    });
+  });
+
+  describe('duda entre dos testigos', () => {
+    it('no elige ninguno, nombra a los dos y no guarda nada, aunque el modelo diga estar seguro', async () => {
+      const before = ctx.diagnoses.diagnoses.length;
+      gemini.answer(recognized('nivel_aceite_bajo', { telltaleAlternativo: 'presion_aceite', confianza: 0.95, pideMejorEntrada: false }));
+      const response = await diagnose({}, JPEG);
+      assert.equal(response.status, 200);
+      assert.equal(response.body.status, 'needs_better_input');
+      assert.match(response.body.pista, /Dudamos entre «Nivel de aceite bajo» y «Presión de aceite»/);
+      assert.match(response.body.avisoSeguridad, /detente en un lugar seguro/);
+      assert.equal(response.body.telltale, undefined);
+      assert.equal(ctx.diagnoses.diagnoses.length, before);
+    });
+
+    it('un alternativo fuera del catálogo también cuenta como duda; repetir el mismo id no', async () => {
+      gemini.answer(recognized('check_engine', { telltaleAlternativo: 'no_existe' }));
+      const unknown = await diagnose({}, JPEG);
+      assert.equal(unknown.body.status, 'needs_better_input');
+      assert.doesNotMatch(unknown.body.pista, /no_existe/);
+
+      gemini.answer(recognized('check_engine', { telltaleAlternativo: 'check_engine' }));
+      assert.equal((await diagnose({}, JPEG)).body.status, 'diagnosed');
+    });
+  });
+
+  describe('check engine parpadeando', () => {
+    const telltale = findTelltale('check_engine')!;
+
+    it('se trata como rojo con la orden de detenerse, y el historial lo guarda en rojo', async () => {
+      gemini.answer(recognized('check_engine', { colorObservado: 'amarillo', parpadeando: true, notaEspecificaDelVehiculo: 'Queda junto al velocímetro.' }));
+      const response = await diagnose({ description: 'el motorcito parpadea' }, JPEG);
+      assert.equal(response.status, 201);
+      assert.equal(response.body.severidad, 'rojo');
+      assert.equal(response.body.urgencia.semaforo, 'rojo');
+      assert.equal(response.body.urgencia.debeDetenerse, true);
+      assert.match(response.body.urgencia.accion, /lugar seguro/);
+      assert.match(response.body.urgencia.accion, /taller/);
+      assert.equal(response.body.cuandoIrAlMecanico, telltale.siParpadea!.cuandoIrAlMecanico);
+      assert.doesNotMatch(response.body.cuandoIrAlMecanico, /próximos días/);
+      assert.equal(response.body.notaEspecificaDelVehiculo, null);
+      assert.equal(ctx.diagnoses.diagnoses.at(-1)!.severidad, 'rojo');
+      assert.equal(telltale.severidad, 'amarillo');
+    });
+
+    it('fijo o sin saberlo sigue en amarillo', async () => {
+      for (const parpadeando of [false, null]) {
+        gemini.answer(recognized('check_engine', { colorObservado: 'amarillo', parpadeando }));
+        const response = await diagnose({}, JPEG);
+        assert.equal(response.body.severidad, 'amarillo', String(parpadeando));
+        assert.equal(response.body.urgencia.debeDetenerse, false);
+        assert.equal(response.body.cuandoIrAlMecanico, telltale.cuandoIrAlMecanico);
+      }
+    });
+
+    it('otros testigos no cambian de severidad por parpadear', async () => {
+      gemini.answer(recognized('control_estabilidad', { colorObservado: 'amarillo', parpadeando: true }));
+      const response = await diagnose({}, JPEG);
+      assert.equal(response.body.severidad, 'amarillo');
+      assert.equal(response.body.urgencia.debeDetenerse, false);
+    });
   });
 
   it('el umbral es exacto: 0.6 ya se acepta', async () => {

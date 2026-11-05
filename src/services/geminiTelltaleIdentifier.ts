@@ -1,6 +1,7 @@
 import type { AppConfig } from '../config/env.js';
 import { GeminiBusyError, GeminiClient, GeminiUnavailableError, GeminiUnusableOutputError, type GeminiClientOptions, type GeminiInputPart } from './geminiClient.js';
 import {
+  OBSERVED_COLORS,
   TELLTALE_INSTRUCTIONS,
   telltaleIdentificationSchema,
   TelltaleIdentifierBusyError,
@@ -19,10 +20,13 @@ export const TELLTALE_RESPONSE_SCHEMA = {
     telltaleId: { type: ['string', 'null'] },
     nombreDetectado: { type: ['string', 'null'] },
     confianza: { type: 'number', minimum: 0, maximum: 1 },
+    colorObservado: { type: 'string', enum: [...OBSERVED_COLORS] },
+    parpadeando: { type: ['boolean', 'null'] },
+    telltaleAlternativo: { type: ['string', 'null'] },
     notaEspecificaDelVehiculo: { type: ['string', 'null'] },
     pideMejorEntrada: { type: 'boolean' }
   },
-  required: ['telltaleId', 'nombreDetectado', 'confianza', 'pideMejorEntrada'],
+  required: ['telltaleId', 'nombreDetectado', 'confianza', 'colorObservado', 'parpadeando', 'telltaleAlternativo', 'pideMejorEntrada'],
   additionalProperties: false
 };
 

@@ -1,4 +1,4 @@
-import { findTelltale, type Telltale, type TelltalePowertrain, type TelltaleSeverity } from '../data/telltales.js';
+import { coloresDe, findTelltale, type Telltale, type TelltaleColor, type TelltalePowertrain, type TelltaleSeverity } from '../data/telltales.js';
 import { detectImageType } from '../domain/imageSignature.js';
 import { badRequest, HttpError, notFound, serviceUnavailable } from '../errors/httpError.js';
 import type { DiagnosisRecord, DiagnosisRepository } from '../repositories/diagnosisRepository.js';
@@ -18,8 +18,11 @@ export const SAFETY_SYSTEM_ACTION = 'El vehículo puede moverse, pero esta prote
 export const DIAGNOSIS_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de diagnóstico con IA está ocupado. Intenta en un minuto o elige el testigo de la lista.';
 export const WHILE_UNIDENTIFIED_WARNING = 'Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.';
 
-const HINT_WITH_IMAGE = 'No pudimos identificar el testigo con seguridad. Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.';
-const HINT_WITH_TEXT = 'No pudimos identificar el testigo con seguridad. Cuéntanos su color y su forma, agrega una foto del tablero o elígelo de la lista.';
+const NEXT_STEP_WITH_IMAGE = 'Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.';
+const NEXT_STEP_WITH_TEXT = 'Cuéntanos su color y su forma, agrega una foto del tablero o elígelo de la lista.';
+const REASON_UNIDENTIFIED = 'No pudimos identificar el testigo con seguridad.';
+const REASON_COLOR_MISMATCH = 'El color que vimos no coincide con el testigo que parece ser.';
+const REASON_COLOR_UNKNOWN = 'No pudimos confirmar el color del testigo, y de eso depende qué tan urgente es.';
 
 // La nota es el único texto libre del modelo: no puede dar consejos de manejo ni de urgencia, ni incluir enlaces.
 const UNSAFE_NOTE = /https?:|www\.|\b(manej|conduc|circul|rodar|rodando|segui|sigue|continu|ignor|grave|urgen|peligr|tranquil|sin problema|no pasa nada)/i;
@@ -56,6 +59,31 @@ export interface DiagnosisContent {
   notaEspecificaDelVehiculo: string | null;
   avisoCompatibilidad: string | null;
   aviso: string;
+}
+
+export type IdentificationVerdict =
+  | { accepted: true; telltale: Telltale; parpadeando: boolean | null }
+  | { accepted: false; reason: string };
+
+/**
+ * Decide si se puede creer lo que dijo el modelo. Ante la duda nunca elige: pide mejor entrada.
+ * El servidor valida el color contra el catálogo para que un testigo rojo no pase por su pariente amarillo.
+ */
+export function evaluateIdentification(identification: TelltaleIdentification): IdentificationVerdict {
+  const { telltaleId, telltaleAlternativo, colorObservado } = identification;
+  const telltale = telltaleId ? findTelltale(telltaleId) : null;
+
+  if (telltaleAlternativo && telltaleAlternativo !== telltaleId) {
+    const alternative = findTelltale(telltaleAlternativo);
+    if (telltale && alternative) return { accepted: false, reason: `Dudamos entre «${telltale.nombre}» y «${alternative.nombre}».` };
+    return { accepted: false, reason: REASON_UNIDENTIFIED };
+  }
+  if (!telltale || identification.pideMejorEntrada || identification.confianza < MIN_CONFIDENCE) return { accepted: false, reason: REASON_UNIDENTIFIED };
+  if (colorObservado === 'desconocido') {
+    return telltale.exigeColor ? { accepted: false, reason: REASON_COLOR_UNKNOWN } : { accepted: true, telltale, parpadeando: identification.parpadeando };
+  }
+  if (!coloresDe(telltale).includes(colorObservado as TelltaleColor)) return { accepted: false, reason: REASON_COLOR_MISMATCH };
+  return { accepted: true, telltale, parpadeando: identification.parpadeando };
 }
 
 export interface Diagnosed extends DiagnosisContent {
@@ -130,10 +158,12 @@ function compatibilityWarning(telltale: Telltale, fuelType: FuelType | null): st
 /**
  * Compone la respuesta solo desde el catálogo. Las garantías de seguridad se aplican aquí, sin importar lo que diga el modelo:
  * neverDrive siempre es rojo con la orden de detenerse, y en un testigo rojo no se muestra la nota del modelo.
- * Un rojo sin neverDrive (airbag) sigue siendo rojo, pero no ordena detenerse.
+ * Un rojo sin neverDrive (airbag) sigue siendo rojo, pero no ordena detenerse. Un parpadeo confirmado de un testigo
+ * con siParpadea (check engine) se trata como rojo, sin cambiar la severidad base del catálogo.
  */
-export function composeDiagnosis(telltale: Telltale, options: { note?: string | null; fuelType?: FuelType | null } = {}): DiagnosisContent {
-  const stop = telltale.neverDrive;
+export function composeDiagnosis(telltale: Telltale, options: { note?: string | null; fuelType?: FuelType | null; parpadeando?: boolean | null } = {}): DiagnosisContent {
+  const blinking = options.parpadeando === true ? telltale.siParpadea : undefined;
+  const stop = telltale.neverDrive || blinking !== undefined;
   const severidad: TelltaleSeverity = stop ? 'rojo' : telltale.severidad;
   const note = severidad !== 'rojo' && options.note && !UNSAFE_NOTE.test(options.note) ? options.note : null;
   return {
@@ -144,7 +174,7 @@ export function composeDiagnosis(telltale: Telltale, options: { note?: string | 
     causasProbables: telltale.causasProbables,
     puedesRevisar: telltale.puedesRevisar,
     noHagas: telltale.noHagas,
-    cuandoIrAlMecanico: telltale.cuandoIrAlMecanico,
+    cuandoIrAlMecanico: blinking?.cuandoIrAlMecanico ?? telltale.cuandoIrAlMecanico,
     notaEspecificaDelVehiculo: note,
     avisoCompatibilidad: compatibilityWarning(telltale, options.fuelType ?? null),
     aviso: DIAGNOSIS_DISCLAIMER
@@ -198,7 +228,7 @@ export class DiagnosisService {
         vehicle: { brand: vehicle.brand, model: vehicle.model, year: vehicle.year, fuelType: vehicle.fuelType }
       });
     } catch (error) {
-      if (error instanceof TelltaleIdentifierUnusableError) return this.needsBetterInput(Boolean(image));
+      if (error instanceof TelltaleIdentifierUnusableError) return this.needsBetterInput(Boolean(image), REASON_UNIDENTIFIED);
       if (error instanceof TelltaleIdentifierBusyError) {
         throw serviceUnavailable(DIAGNOSIS_PROVIDER_BUSY_MESSAGE, { code: 'DIAGNOSIS_PROVIDER_BUSY', retryAfterSeconds: 60 });
       }
@@ -210,14 +240,13 @@ export class DiagnosisService {
       throw error;
     }
 
-    const telltale = identification.telltaleId ? findTelltale(identification.telltaleId) : null;
-    if (!telltale || identification.pideMejorEntrada || identification.confianza < MIN_CONFIDENCE) {
-      return this.needsBetterInput(Boolean(image));
-    }
-    return this.save(userId, vehicle, telltale, {
+    const verdict = evaluateIdentification(identification);
+    if (!verdict.accepted) return this.needsBetterInput(Boolean(image), verdict.reason);
+    return this.save(userId, vehicle, verdict.telltale, {
       confianza: roundConfidence(identification.confianza),
       description,
-      note: identification.notaEspecificaDelVehiculo ?? null
+      note: identification.notaEspecificaDelVehiculo ?? null,
+      parpadeando: verdict.parpadeando
     });
   }
 
@@ -236,9 +265,9 @@ export class DiagnosisService {
     userId: string,
     vehicle: GarageVehicleRecord,
     telltale: Telltale,
-    { confianza, description, note }: { confianza: number | null; description: string | undefined; note: string | null }
+    { confianza, description, note, parpadeando = null }: { confianza: number | null; description: string | undefined; note: string | null; parpadeando?: boolean | null }
   ): Promise<Diagnosed> {
-    const content = composeDiagnosis(telltale, { note, fuelType: vehicle.fuelType });
+    const content = composeDiagnosis(telltale, { note, fuelType: vehicle.fuelType, parpadeando });
     const record = await this.diagnoses.create({
       userId,
       vehicleId: vehicle.id,
@@ -250,10 +279,10 @@ export class DiagnosisService {
     return { status: 'diagnosed', id: record.id, origen: confianza === null ? 'manual' : 'ia', confianza, createdAt: record.createdAt, ...content };
   }
 
-  private needsBetterInput(hadImage: boolean): NeedsBetterInput {
+  private needsBetterInput(hadImage: boolean, reason: string): NeedsBetterInput {
     return {
       status: 'needs_better_input',
-      pista: hadImage ? HINT_WITH_IMAGE : HINT_WITH_TEXT,
+      pista: `${reason} ${hadImage ? NEXT_STEP_WITH_IMAGE : NEXT_STEP_WITH_TEXT}`,
       avisoSeguridad: WHILE_UNIDENTIFIED_WARNING,
       puedeElegirDeLaLista: true
     };

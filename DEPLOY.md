@@ -3,8 +3,7 @@
 ```
 navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render (esta API) ──► Neon (Postgres)
                                                               ├─► Brevo (correo por HTTPS)
-                                                              ├─► Gemini o Anthropic (lectura de tarjeta, opcional)
-                                                              └─► Verifik (RUNT, opcional, sin implementar)
+                                                              └─► Gemini o Anthropic (lectura de tarjeta, opcional)
 ```
 
 ## Pendientes manuales (TODO)
@@ -15,7 +14,6 @@ navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render 
 - [ ] **Administrador:** poner tu correo en `ADMIN_EMAILS` (paso 5).
 - [ ] **Ping de salud:** UptimeRobot o cron-job.org contra `/health` cada 10 minutos (paso 2.5).
 - [ ] **Responsable del tratamiento:** confirmar los datos de contacto en la sección "Tratamiento de datos personales" del README.
-- [ ] **Verifik (opcional):** pedir el contrato vigente y una clave (paso 7).
 
 ## 1. Neon (Postgres)
 
@@ -34,11 +32,14 @@ navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render 
 | Migración | Qué crea |
 | --- | --- |
 | `1761800000000_create-auth-tables` | `users`, `password_reset_tokens`, `refresh_tokens` |
-| `1761800100000_create-vehicle-tables` | `vehicles`, `inspections` (**demostración**) |
-| `1761800200000_seed-demo-vehicles` | 3 placas ficticias (**demostración**) |
+| `1761800100000_create-vehicle-tables` | `vehicles`, `inspections` (demostración, eliminadas después) |
+| `1761800200000_seed-demo-vehicles` | 3 placas ficticias (demostración, eliminadas después) |
 | `1762100000000_add-email-verification` | `users.email_verified_at`, `email_verification_tokens` |
 | `1762100100000_add-terms-consent` | `users.terms_accepted_at`, `users.terms_version` |
 | `1762100200000_create-user-vehicles` | `user_vehicles` (garaje real) |
+| `1762200000000_drop-demo-vehicles` | Elimina `vehicles` e `inspections` |
+| `1762200100000_drop-document-columns` | Elimina `soat_expires_on`, `rtm_expires_on` y `runt_status` de `user_vehicles` |
+| `1762200200000_add-vehicle-mileage` | `user_vehicles.mileage_km` |
 
 La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
 
@@ -71,7 +72,6 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
    | `TRUST_PROXY` | `2` | `1` |
    | `SCAN_PROVIDER` | `gemini` | `none` |
    | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` |
-   | `RUNT_PROVIDER` | `none` | `none` |
 
    **Opcionales** (pueden quedar vacías; el servicio arranca igual):
 
@@ -80,7 +80,6 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
    | `ADMIN_EMAILS` | Correos que reciben rol admin al verificar (paso 5) | Nadie es admin automáticamente |
    | `GEMINI_API_KEY` | Lectura de tarjeta con Gemini (paso 6) | `scan-card` responde 503 |
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Solo si cambias a `SCAN_PROVIDER=anthropic` (no están en `render.yaml`) | — |
-   | `VERIFIK_API_KEY` | Solo si cambias a `RUNT_PROVIDER=verifik` (no está en `render.yaml`) | — |
 
    No hacen falta `SMTP_*`: Render gratuito bloquea los puertos SMTP 25/465/587, por eso el correo va por la API HTTPS de Brevo.
 3. Verifica (la URL actual del servicio es `https://autocheck-backend-d2k2.onrender.com`):
@@ -114,7 +113,7 @@ Camino de una petición: `navegador → Vercel (proxy 1) → balanceador de Rend
 | Directo a `*.onrender.com` | `1` | IP real del cliente |
 | Desarrollo local | `0` | IP del socket |
 
-- **Riesgo con `2`:** quien llame directo a `onrender.com` puede falsificar el primer valor de `X-Forwarded-For`. Por eso login, recuperación y reenvío de verificación limitan además por correo, y la lectura de tarjetas y la consulta RUNT limitan por usuario.
+- **Riesgo con `2`:** quien llame directo a `onrender.com` puede falsificar el primer valor de `X-Forwarded-For`. Por eso login, recuperación y reenvío de verificación limitan además por correo, y la lectura de tarjetas limita por usuario.
 - **Cómo verificarlo:** `morgan` registra `req.ip` en cada línea de log. Compárala con <https://ifconfig.me>.
 
 ### Cookie de refresh detrás de `/api/*`
@@ -194,22 +193,9 @@ Detalles del proveedor:
 - Máximo 5 MB y 10 lecturas por hora por usuario.
 - La respuesta solo precarga datos: el usuario los confirma con `POST /garage`.
 
-## 7. Consulta RUNT por proveedor (desactivada)
-
-No se hace scraping de RUNT ni de ningún sitio oficial.
-
-- **`RUNT_PROVIDER=none` (por defecto):** `POST /garage/:plate/refresh-from-runt` responde 503 y la app usa el garaje manual.
-- **`RUNT_PROVIDER=verifik`:** exige `VERIFIK_API_KEY`. El adaptador es un **esqueleto** y responde 501, porque la documentación pública de Verifik es inconsistente. El detalle está en `src/providers/verifikProvider.ts`.
-
-Para activarlo:
-
-1. Pide a Verifik el contrato vigente y una clave.
-2. Implementa `lookupByPlate`, usando como guía `test/runtLookup.test.ts`.
-3. Agrega en Render `RUNT_PROVIDER=verifik` y `VERIFIK_API_KEY`.
-
-## 8. Secretos y rotación
+## 7. Secretos y rotación
 
 - `.env` está en `.gitignore`. El hook `pre-push` (`scripts/check-secrets.sh`) bloquea los pushes que contengan `.env` o patrones de claves.
 - **JWT:** genera valores nuevos en Render (**Environment**) y redespliega. Se cierran todas las sesiones.
 - **Neon:** en **Roles → Reset password**, resetea la contraseña y actualiza `DATABASE_URL`.
-- **Brevo, Gemini, Anthropic o Verifik:** revoca la clave en el proveedor, crea una nueva y actualízala en Render.
+- **Brevo, Gemini o Anthropic:** revoca la clave en el proveedor, crea una nueva y actualízala en Render.

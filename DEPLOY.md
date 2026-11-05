@@ -10,7 +10,9 @@ navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render 
 
 - [ ] **Render:** crear el servicio desde `render.yaml` y cargar las variables marcadas "cargar" (paso 2).
 - [ ] **Brevo:** crear la cuenta, verificar el remitente y crear la clave de API (paso 4). Sin correo, nadie recibe el enlace de verificación.
-- [ ] **Gemini (opcional):** crear la clave en Google AI Studio y cargarla en `GEMINI_API_KEY` (paso 6). Sin ella, `POST /garage/scan-card` responde 503.
+- [ ] **Gemini (opcional):** crear la clave en Google AI Studio y cargarla en `GEMINI_API_KEY` (paso 6). Sin ella, `POST /garage/scan-card` y el diagnóstico con IA responden 503; elegir el testigo de la lista sigue funcionando.
+- [ ] **Catálogo de testigos:** hacerlo revisar por una persona con conocimiento mecánico antes de la entrega (`src/data/telltales.ts`).
+- [ ] **Render, variables que ya no hacen falta:** borrar `RUNT_PROVIDER` y `VERIFIK_API_KEY` si existen. Si se quedan, la API las ignora.
 - [ ] **Administrador:** poner tu correo en `ADMIN_EMAILS` (paso 5).
 - [ ] **Ping de salud:** UptimeRobot o cron-job.org contra `/health` cada 10 minutos (paso 2.5).
 - [ ] **Responsable del tratamiento:** confirmar los datos de contacto en la sección "Tratamiento de datos personales" del README.
@@ -40,6 +42,7 @@ navegador ──► Vercel (frontend Angular + rewrite /api/*) ──► Render 
 | `1762200000000_drop-demo-vehicles` | Elimina `vehicles` e `inspections` |
 | `1762200100000_drop-document-columns` | Elimina `soat_expires_on`, `rtm_expires_on` y `runt_status` de `user_vehicles` |
 | `1762200200000_add-vehicle-mileage` | `user_vehicles.mileage_km` |
+| `1762200300000_create-diagnoses` | `diagnoses` (historial, sin imagen) |
 
 La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
 
@@ -78,7 +81,7 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
    | Variable | Para qué | Si queda vacía |
    | --- | --- | --- |
    | `ADMIN_EMAILS` | Correos que reciben rol admin al verificar (paso 5) | Nadie es admin automáticamente |
-   | `GEMINI_API_KEY` | Lectura de tarjeta con Gemini (paso 6) | `scan-card` responde 503 |
+   | `GEMINI_API_KEY` | Lectura de tarjeta y diagnóstico con Gemini (paso 6) | `scan-card` y el diagnóstico con IA responden 503; la elección manual sigue funcionando |
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Solo si cambias a `SCAN_PROVIDER=anthropic` (no están en `render.yaml`) | — |
 
    No hacen falta `SMTP_*`: Render gratuito bloquea los puertos SMTP 25/465/587, por eso el correo va por la API HTTPS de Brevo.
@@ -86,10 +89,10 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
 
    ```bash
    curl https://autocheck-backend-d2k2.onrender.com/health          # {"status":"ok",...}
-   curl https://autocheck-backend-d2k2.onrender.com/config/public   # proveedor de lectura activo y textos de privacidad
+   curl https://autocheck-backend-d2k2.onrender.com/config/public   # proveedores activos y textos de privacidad
    ```
 
-   En los logs del arranque deben aparecer "Correo: proveedor brevo." y "Lectura de tarjeta: gemini (...)" (o el aviso de que falta la clave).
+   En los logs del arranque deben aparecer "Correo: proveedor brevo." y "Lectura de tarjeta: gemini (...)" (o el aviso de que falta la clave). Si la IA está apagada, también aparece "Diagnóstico con IA apagado".
 
 ### 2.5 Mantener Render despierto
 
@@ -113,7 +116,7 @@ Camino de una petición: `navegador → Vercel (proxy 1) → balanceador de Rend
 | Directo a `*.onrender.com` | `1` | IP real del cliente |
 | Desarrollo local | `0` | IP del socket |
 
-- **Riesgo con `2`:** quien llame directo a `onrender.com` puede falsificar el primer valor de `X-Forwarded-For`. Por eso login, recuperación y reenvío de verificación limitan además por correo, y la lectura de tarjetas limita por usuario.
+- **Riesgo con `2`:** quien llame directo a `onrender.com` puede falsificar el primer valor de `X-Forwarded-For`. Por eso login, recuperación y reenvío de verificación limitan además por correo, y la lectura de tarjetas y los diagnósticos limitan por usuario.
 - **Cómo verificarlo:** `morgan` registra `req.ip` en cada línea de log. Compárala con <https://ifconfig.me>.
 
 ### Cookie de refresh detrás de `/api/*`
@@ -128,7 +131,8 @@ Camino de una petición: `navegador → Vercel (proxy 1) → balanceador de Rend
 3. Orden: **primero la API**, después el frontend.
 4. El frontend debe mostrar los textos de `GET /config/public`:
    - `privacyPolicy.registrationConsent` junto a la casilla del registro.
-   - `cardScan.notice` antes de subir la foto.
+   - `cardScan.notice` antes de subir la foto de la tarjeta.
+   - `diagnosis.notice` antes de subir la foto del tablero.
 
 ## 4. Correo con Brevo (API HTTPS)
 
@@ -161,7 +165,9 @@ Notas:
 - El rol viaja en el access token; la app lo refleja en el siguiente refresh o login.
 - Quitar un correo de la lista **no** revoca el rol. Para eso: `UPDATE users SET role = 'user' WHERE email = '...';` en el SQL Editor de Neon.
 
-## 6. Lectura de la tarjeta (`SCAN_PROVIDER`)
+## 6. Lectura de la tarjeta y diagnóstico con IA (`SCAN_PROVIDER`)
+
+El diagnóstico de testigos reutiliza `SCAN_PROVIDER`, `GEMINI_API_KEY` y `GEMINI_MODEL`: **no necesita variables nuevas**. Solo funciona con Gemini: con `anthropic` o `none` responde 503, y elegir el testigo de la lista sigue funcionando.
 
 | `SCAN_PROVIDER` | Proveedor | Variables |
 | --- | --- | --- |
@@ -172,14 +178,14 @@ Notas:
 **Gemini:**
 
 1. TODO: crea la clave en <https://aistudio.google.com/apikey> y cárgala en `GEMINI_API_KEY` de Render.
-2. Verifica con `GET /config/public` que aparezca `"cardScan": { "enabled": true, "provider": "gemini", ... }`.
+2. Verifica con `GET /config/public` que `cardScan` y `diagnosis` tengan `"enabled": true` y `"provider": "gemini"`.
 
 Detalles del proveedor:
 
 - **Contrato:** Interactions API (`POST https://generativelanguage.googleapis.com/v1beta/interactions`, cabecera `x-goog-api-key`), imagen en base64 y respuesta JSON con esquema. Tomado de la documentación oficial de Google AI Studio el 2026-11-02.
 - **Modelo:** `gemini-3.5-flash-lite` está en el plan gratuito y su página de precios lista entrada de imágenes. Si la lectura es mala, puedes subir a otro modelo con `GEMINI_MODEL` (por ejemplo `gemini-3.8-flash`); revisa antes en la página de precios que acepte imágenes en tu plan.
-- **Privacidad:** en el plan gratuito, Google puede usar lo enviado para mejorar sus productos. Esto está declarado en el consentimiento del registro y en `cardScan.notice`.
-- **Saturación:** si el plan gratuito se satura (HTTP 429), la API responde `503 SCAN_PROVIDER_BUSY`: "El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano."
+- **Privacidad:** en el plan gratuito, Google puede usar lo enviado para mejorar sus productos. Esto está declarado en el consentimiento del registro, en `cardScan.notice` y en `diagnosis.notice`.
+- **Saturación:** si el plan gratuito se satura (HTTP 429), la API responde `503 SCAN_PROVIDER_BUSY`: "El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano." En el diagnóstico responde `503 DIAGNOSIS_PROVIDER_BUSY` y sugiere elegir el testigo de la lista.
 
 **Anthropic** (si algún día lo prefieres):
 
@@ -190,8 +196,10 @@ Detalles del proveedor:
 
 - La imagen se procesa en memoria y no se guarda ni se registra.
 - El tipo se valida por la firma del archivo.
-- Máximo 5 MB y 10 lecturas por hora por usuario.
-- La respuesta solo precarga datos: el usuario los confirma con `POST /garage`.
+- Máximo 5 MB, 10 lecturas de tarjeta y 15 diagnósticos por hora por usuario.
+- La lectura de tarjeta solo precarga datos: el usuario los confirma con `POST /garage`.
+- En el diagnóstico el modelo solo identifica el testigo; la respuesta sale del catálogo y no se le envía la placa.
+- Los logs no registran imágenes, descripciones ni placas.
 
 ## 7. Secretos y rotación
 

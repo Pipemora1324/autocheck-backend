@@ -50,7 +50,8 @@ services:
       # Correos que reciben rol admin al verificar su correo, separados por coma.
       - key: ADMIN_EMAILS
         sync: false
-      # Lectura de la tarjeta con Gemini (plan gratuito). Sin GEMINI_API_KEY, scan-card responde 503.
+      # Lectura de la tarjeta y diagnostico de testigos con Gemini (plan gratuito).
+      # Sin GEMINI_API_KEY, ambos responden 503; la eleccion manual del testigo sigue funcionando.
       - key: SCAN_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY

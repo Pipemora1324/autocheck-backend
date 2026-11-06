@@ -74,7 +74,7 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
    | `COOKIE_SAMESITE` | `strict` | `strict` |
    | `TRUST_PROXY` | `2` | `1` |
    | `SCAN_PROVIDER` | `gemini` | `none` |
-   | `GEMINI_MODEL` | `gemini-3.5-flash` | `gemini-3.5-flash` |
+   | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` |
 
    **Opcionales** (pueden quedar vacías; el servicio arranca igual):
 
@@ -171,7 +171,7 @@ El diagnóstico de testigos reutiliza `SCAN_PROVIDER`, `GEMINI_API_KEY` y `GEMIN
 
 | `SCAN_PROVIDER` | Proveedor | Variables |
 | --- | --- | --- |
-| `gemini` (recomendado, gratis) | Gemini API de Google AI Studio | `GEMINI_API_KEY`, `GEMINI_MODEL` (por defecto `gemini-3.5-flash`) |
+| `gemini` (recomendado, gratis) | Gemini API de Google AI Studio | `GEMINI_API_KEY`, `GEMINI_MODEL` (por defecto `gemini-3.5-flash-lite`) |
 | `anthropic` | API de Claude (de pago) | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (por defecto `claude-sonnet-5-5`) |
 | `none` | Apagado | — |
 
@@ -183,9 +183,9 @@ El diagnóstico de testigos reutiliza `SCAN_PROVIDER`, `GEMINI_API_KEY` y `GEMIN
 Detalles del proveedor:
 
 - **Contrato:** Interactions API (`POST https://generativelanguage.googleapis.com/v1beta/interactions`, cabecera `x-goog-api-key`), imagen en base64 y respuesta JSON con esquema. Tomado de la documentación oficial de Google AI Studio el 2026-11-02.
-- **Modelo:** `gemini-3.5-flash` respondió 200 con imagen en una clave del plan gratuito (2026-11-05). Los modelos disponibles cambian: `npm run smoke:gemini` lista y prueba los de tu clave.
+- **Modelo:** usa `gemini-3.5-flash-lite`. El 2026-11-05 leyó 7 de 7 fotos reales sin errores en una clave del plan gratuito, mientras `gemini-3.5-flash` tuvo muchos 503 y agotó su cupo diario. Los modelos y cupos cambian: `npm run smoke:gemini` lista y prueba los de tu clave.
 - **Privacidad:** en el plan gratuito, Google puede usar lo enviado para mejorar sus productos. Esto está declarado en el consentimiento del registro, en `cardScan.notice` y en `diagnosis.notice`.
-- **Saturación:** si el plan gratuito se satura (HTTP 429), la API responde `503 SCAN_PROVIDER_BUSY`: "El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano." En el diagnóstico responde `503 DIAGNOSIS_PROVIDER_BUSY` y sugiere elegir el testigo de la lista.
+- **Saturación:** los 5xx se reintentan dos veces. Si el plan gratuito se satura (HTTP 429, por minuto o por día, compartido entre todos los usuarios), la API responde `503 SCAN_PROVIDER_BUSY`: "El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano." En el diagnóstico responde `503 DIAGNOSIS_PROVIDER_BUSY` y sugiere elegir el testigo de la lista; en el chat, `503 CHAT_PROVIDER_BUSY`.
 
 **Anthropic** (si algún día lo prefieres):
 
@@ -196,9 +196,9 @@ Detalles del proveedor:
 
 - La imagen se procesa en memoria y no se guarda ni se registra.
 - El tipo se valida por la firma del archivo.
-- Máximo 5 MB, 10 lecturas de tarjeta, 15 diagnósticos con IA y 60 consultas de la lista por hora por usuario.
+- Máximo 5 MB, 10 lecturas de tarjeta, 15 diagnósticos con IA, 60 consultas de la lista y 40 mensajes de chat por hora por usuario, y 20 mensajes por diagnóstico.
 - La lectura de tarjeta solo precarga datos: el usuario los confirma con `POST /garage`.
-- En el diagnóstico el modelo solo identifica el testigo; la respuesta sale del catálogo y no se le envía la placa.
+- En el diagnóstico y el chat, el modelo redacta el texto, pero el servidor decide la urgencia y bloquea lo que sugiera seguir manejando (`src/domain/diagnosisSafety.ts`). No se le envía la placa.
 - Los logs no registran imágenes, descripciones ni placas.
 
 ## 7. Secretos y rotación

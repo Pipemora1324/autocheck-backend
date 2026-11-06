@@ -44,6 +44,7 @@ Validación (400):
 | 503 | `VISION_NOT_CONFIGURED`, `VISION_UNAVAILABLE` | Lectura de tarjeta apagada o caída |
 | 503 | `AI_NOT_CONFIGURED`, `DIAGNOSIS_UNAVAILABLE` | Diagnóstico con IA apagado o caído. Ofrece elegir el testigo de la lista, que sigue funcionando |
 | 503 | `DIAGNOSIS_PROVIDER_BUSY` | **Cuota del proveedor:** Gemini respondió 429, por su plan gratuito y no por este usuario. Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece la lista |
+| 503 | `CHAT_PROVIDER_BUSY`, `CHAT_UNAVAILABLE` | El chat no pudo responder: cuota del proveedor o falla del servicio. No se guarda nada |
 | 503 | `SCAN_PROVIDER_BUSY` | El proveedor gratuito de lectura está saturado (429). Incluye `retryAfterSeconds: 60`; muestra el `message` y ofrece ingresar los datos a mano |
 
 ---
@@ -57,7 +58,7 @@ Validación (400):
 ```json
 {
   "privacyPolicy": {
-    "version": "2026-11-04.1",
+    "version": "2026-11-05.1",
     "registrationConsent": "Autorizo a AutoCheck-CO a tratar mis datos personales ... La foto no se guarda en los servidores de AutoCheck-CO. El diagnóstico es orientación general y un mecánico debe confirmarlo."
   },
   "cardScan": {
@@ -296,64 +297,86 @@ Solo sobre vehículos del usuario autenticado. Una placa ajena responde `404`.
 | `image` | Archivo | JPEG, PNG o WEBP, validado por firma, de máximo 5 MB. Se procesa en memoria y no se guarda ni se registra |
 | `description` | Texto | Máximo 500 caracteres. Se guarda en el historial |
 | `telltaleId` | Texto | Un `id` de `GET /telltales`. Si viene, **no se llama a la IA**, y la foto no se envía a nadie |
+| `parpadea` | `true` o `false` | Opcional. Una foto fija no demuestra un parpadeo: envíalo solo si el usuario lo indica |
 
 La elección manual también se acepta como JSON: `{ "telltaleId": "tpms" }`.
 
 Antes de subir la foto, muestra `diagnosis.notice`.
 
-**`201`, testigo identificado:**
+**`201`, testigos identificados.** Con IA, una foto puede dar hasta 8 testigos, ordenados del más grave al menos grave. La elección manual responde igual, con uno solo y con el texto del catálogo:
 
 ```json
 {
   "status": "diagnosed",
   "id": "uuid",
   "origen": "ia",
-  "confianza": 0.93,
-  "createdAt": "2026-11-04T17:00:00.000Z",
-  "telltale": { "id": "presion_aceite", "nombre": "Presión de aceite", "descripcionSimbolo": "Aceitera roja, ..." },
-  "severidad": "rojo",
-  "urgencia": {
-    "semaforo": "rojo",
-    "titulo": "Detente",
-    "accion": "Detente en un lugar seguro en cuanto puedas, apaga el motor y llama a un taller o a una grúa. No sigas manejando.",
-    "debeDetenerse": true,
-    "esFalla": true
-  },
-  "significado": "El aceite no está llegando al motor con la presión necesaria. ...",
-  "causasProbables": ["Nivel de aceite muy bajo", "Fuga de aceite"],
-  "puedesRevisar": ["Con el motor apagado y en terreno plano, espera unos minutos y mira el nivel en la varilla."],
-  "noHagas": ["No sigas manejando para \"llegar al taller\"."],
-  "cuandoIrAlMecanico": "De inmediato y con grúa, ... Si se ignora, el motor puede fundirse en poco tiempo, ...",
-  "notaEspecificaDelVehiculo": null,
-  "avisoCompatibilidad": null,
+  "confianza": 0.95,
+  "descripcion": null,
+  "createdAt": "2026-11-05T17:00:00.000Z",
+  "urgenciaGeneral": "rojo",
+  "debeDetenerse": true,
+  "accionGeneral": "Detente en un lugar seguro en cuanto puedas, apaga el motor y llama a un taller o a una grúa. No sigas manejando.",
+  "mensajeGeneral": "Se ven varios testigos encendidos.",
+  "mejorFoto": null,
+  "testigos": [
+    {
+      "nombre": "Presión de aceite",
+      "descripcionSimbolo": "Aceitera, a la izquierda del display.",
+      "color": "rojo",
+      "parpadeando": null,
+      "categoria": "aceite",
+      "urgencia": "rojo",
+      "debeDetenerse": true,
+      "accion": "Detente en un lugar seguro en cuanto puedas, ...",
+      "significado": "El aceite no está llegando al motor con la presión necesaria.",
+      "porQuePasa": ["Nivel de aceite muy bajo"],
+      "puedesRevisar": ["Con el motor apagado, mira si hay manchas debajo del vehículo."],
+      "noHagas": ["No sigas manejando."],
+      "cuandoIrAlMecanico": "Ahora: no sigas manejando. Llama a un taller o a una grúa ...",
+      "notaDelVehiculo": null,
+      "confianza": 0.95
+    }
+  ],
   "aviso": "Orientación general. Un mecánico debe confirmar el diagnóstico."
 }
 ```
 
 **Cómo leer la respuesta:**
 
-- **`origen`:** `ia` o `manual`. En `manual`, `confianza` es `null`.
-- **`urgencia.semaforo`:** `rojo`, `amarillo` o `informativo` (`esFalla: false`: explica que no es una falla).
-- **`urgencia.debeDetenerse`:** decide el aviso de detenerse, no el color. El airbag es `rojo` con `debeDetenerse: false` y `titulo: "Revísalo hoy"`: el vehículo puede moverse, pero no se debe depender de esa protección.
-- **`neverDrive`:** los testigos marcados así en el catálogo siempre responden rojo y con la orden de detenerse, aunque el modelo diga otra cosa. Incluyen presión de aceite, temperatura, frenos y dirección.
-- **Check engine parpadeando:** si el modelo informa un parpadeo, responde `severidad: "rojo"` y `debeDetenerse: true`, y así queda en el historial. Su severidad base en el catálogo sigue siendo `amarillo`. Una foto fija casi nunca demuestra un parpadeo: el modelo lo sabe sobre todo por la descripción del usuario.
-- **`notaEspecificaDelVehiculo`:** texto corto del modelo, o `null`. El servidor la descarta en los testigos rojos, y si da consejos de manejo o incluye enlaces.
-- **`avisoCompatibilidad`:** aparece si el testigo no suele corresponder al combustible registrado. No oculta el diagnóstico.
-- Muestra siempre `aviso`.
+- **`origen`:** `ia` o `manual`. En `manual`, `confianza` es `null`. En `ia`, es la mayor confianza entre los testigos.
+- **`urgenciaGeneral`:** la del testigo más grave: `rojo`, `amarillo` o `informativo`.
+- **`debeDetenerse`:** decide el aviso de detenerse, no el color. El airbag es `rojo` con `debeDetenerse: false`.
+- **`categoria`:** `aceite`, `temperatura`, `frenos`, `freno_mano`, `direccion`, `airbag`, `bateria_carga`, `motor_emisiones`, `transmision`, `llantas`, `estabilidad_abs`, `combustible`, `luces`, `informativo` u `otro`.
+- **`mejorFoto`:** si se pudo leer la foto pero conviene repetirla, el motivo.
+- Un texto del modelo que sugiera seguir manejando puede llegar vacío: oculta esa sección. Muestra siempre `aviso`.
 
-**`200`, no se pudo identificar con seguridad.** No se inventa nada ni se guarda en el historial. Ocurre en estos casos:
+**Piso de seguridad.** Lo aplica el servidor (`src/domain/diagnosisSafety.ts`), sin importar lo que diga el modelo:
 
-- El modelo no reconoce el testigo, su confianza es menor a 0.6 o su salida es inválida.
-- El modelo duda entre dos testigos (`telltaleAlternativo`): nunca se elige uno.
-- El color observado es incompatible con el testigo, por ejemplo `nivel_aceite_bajo` en rojo o `sistema_frenos` en amarillo.
-- El color es desconocido y el testigo solo se distingue por el color de otro más grave (`nivel_aceite_bajo`, `nivel_refrigerante`).
+| Caso | Resultado |
+| --- | --- |
+| `aceite`, `temperatura`, `frenos`, `direccion` | Rojo y orden de detenerse |
+| `bateria_carga` | Rojo y orden de detenerse, igual que en el catálogo |
+| `transmision` en rojo | Orden de detenerse, igual que en el catálogo |
+| `airbag` | Como mínimo rojo, sin ordenar detenerse |
+| `freno_mano` | Informativo o amarillo, aunque se vea rojo. Pasa a `frenos` si el usuario dice que el freno está liberado, o si el nombre deja cualquier duda ("Freno de mano o nivel de líquido de frenos") |
+| `motor_emisiones` parpadeando | Rojo y orden de detenerse |
+| `otro` en rojo | Rojo |
 
-`pista` cambia según el caso y según si llegó una foto:
+En todos se eliminan las frases que sugieran seguir manejando. El color solo informa la urgencia: no rechaza la foto, porque muchos tableros se iluminan de rojo.
+
+**`200`, sin testigos.** No se inventa nada ni se guarda en el historial:
+
+| `status` | Cuándo | `reason` |
+| --- | --- | --- |
+| `not_recognized` | No es un tablero o no hay testigos encendidos. `pista` lo explica | |
+| `needs_better_input` | La foto no deja leer los testigos | `no_telltales_found` |
+| `needs_better_input` | Todos los testigos tienen confianza menor a 0.3 y ninguno es rojo | `low_confidence` |
 
 ```json
 {
   "status": "needs_better_input",
-  "pista": "No pudimos identificar el testigo con seguridad. Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.",
+  "reason": "no_telltales_found",
+  "pista": "La foto está muy oscura. Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.",
   "avisoSeguridad": "Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.",
   "puedeElegirDeLaLista": true
 }
@@ -361,13 +384,15 @@ Antes de subir la foto, muestra `diagnosis.notice`.
 
 **Errores:** `400`, `404`, `413`, `415`, `429` y `503`, según la tabla de errores. Ante cualquier `503`, ofrece elegir el testigo de la lista.
 
-**`429 RATE_LIMITED` o `503 DIAGNOSIS_PROVIDER_BUSY`:**
+**Fallas del proveedor.** Nunca se disfrazan de "toma otra foto", y los logs solo registran el código HTTP y el tipo de error. Los 5xx se reintentan dos veces antes de responder.
 
-| | `429 RATE_LIMITED` | `503 DIAGNOSIS_PROVIDER_BUSY` |
-| --- | --- | --- |
-| Quién limita | AutoCheck, por usuario | Gemini, por su plan gratuito |
-| Cuándo pasa | El usuario superó su límite por hora | Gemini respondió 429, aunque el usuario esté dentro de su límite |
-| Qué hacer | Intentar más tarde. Con `limite: "ia"`, también elegir de la lista | Intentar en un minuto (`retryAfterSeconds`) o elegir de la lista |
+| `status` | `code` | Cuándo | Qué hacer |
+| --- | --- | --- | --- |
+| `provider_busy` | `503 DIAGNOSIS_PROVIDER_BUSY` | Gemini respondió 429: cupo del plan gratuito, por minuto o por día | Intentar más tarde (`retryAfterSeconds`) o elegir de la lista |
+| `provider_error` | `503 DIAGNOSIS_UNAVAILABLE` | 400, 401, 403 o 5xx de Gemini, JSON inválido o tiempo agotado | Intentar más tarde o elegir de la lista |
+| `provider_error` | `503 AI_NOT_CONFIGURED` | `SCAN_PROVIDER` distinto de `gemini` o sin clave | Elegir de la lista |
+
+`429 RATE_LIMITED` es distinto: es el límite de AutoCheck por usuario. Con `limite: "ia"`, también se puede elegir de la lista.
 
 ### `GET /garage/:plate/diagnoses`
 
@@ -380,6 +405,7 @@ Historial del vehículo, del más reciente al más antiguo. Parámetros: `page` 
       "id": "uuid",
       "telltaleId": "tpms",
       "nombre": "Presión de llantas (TPMS)",
+      "totalTestigos": 1,
       "severidad": "amarillo",
       "debeDetenerse": false,
       "origen": "manual",
@@ -395,24 +421,55 @@ Historial del vehículo, del más reciente al más antiguo. Parámetros: `page` 
 }
 ```
 
-- **`severidad`:** la que se guardó al crear la entrada, incluido un check engine escalado a rojo.
+- **`telltaleId`:** solo en la elección manual; `null` con IA.
+- **`nombre`:** el testigo más grave. `totalTestigos` dice cuántos eran.
+- **`severidad`:** la urgencia general que se guardó al crear la entrada.
 
 ### `GET /garage/:plate/diagnoses/:id`
 
 Una entrada con su explicación completa. **Solo lee:** no crea otra entrada, no llama a la IA y no cuenta para ningún límite. Solo responde al dueño del vehículo.
 
-`200` con los mismos campos de `201` en `POST`, más `descripcion` (el texto del usuario, o `null`).
+`200` con los mismos campos de `201` en `POST`: lo que se le explicó al usuario ese día, guardado en JSON y sin la imagen. Las entradas anteriores a esta versión no lo tienen, y se recomponen desde el catálogo vigente.
 
-- **Usa el catálogo vigente:** el historial guarda el id del testigo, no el texto. Si el catálogo cambió después, la explicación y la severidad son las actuales, y no necesariamente lo que el usuario leyó ese día.
-- **Se conserva de la entrada:** `origen`, `confianza`, `createdAt`, `descripcion` y si el check engine se escaló a rojo por un parpadeo.
-- **`notaEspecificaDelVehiculo`:** siempre `null`, porque la nota del modelo no se guarda.
-- **`avisoCompatibilidad`:** se calcula con el combustible actual del vehículo.
-
-**Errores:** `400` si el `id` no es un UUID. `404` si no está en el historial de ese vehículo o la placa no es tuya. `404 TELLTALE_NOT_IN_CATALOG` si el testigo salió del catálogo.
+**Errores:** `400` si el `id` no es un UUID. `404` si no está en el historial de ese vehículo o la placa no es tuya. `404 TELLTALE_NOT_IN_CATALOG` si es una entrada anterior y el testigo salió del catálogo.
 
 ### `DELETE /garage/:plate/diagnoses/:id`
 
-`204`. `404` si no está en el historial de ese vehículo, y `400` si el `id` no es un UUID. Borrar el vehículo o la cuenta también borra su historial.
+`204`. `404` si no está en el historial de ese vehículo, y `400` si el `id` no es un UUID. Borrar el vehículo o la cuenta también borra su historial. La conversación se borra con el diagnóstico.
+
+### `GET /garage/:plate/diagnoses/:id/messages`
+
+La conversación, de la más antigua a la más reciente, y cuántos mensajes le quedan al usuario en este diagnóstico. No llama a la IA.
+
+```json
+{
+  "messages": [{ "id": "uuid", "role": "user", "content": "¿Puedo seguir manejando?", "createdAt": "2026-11-05T17:00:00.000Z" }],
+  "restantes": 19
+}
+```
+
+### `POST /garage/:plate/diagnoses/:id/messages`
+
+Cuerpo: `{ "message": "texto" }`, de máximo 500 caracteres. Solo texto. Responde `201` con la pregunta y la respuesta, ya guardadas:
+
+```json
+{
+  "question": { "id": "uuid", "role": "user", "content": "...", "createdAt": "..." },
+  "answer": { "id": "uuid", "role": "assistant", "content": "...", "createdAt": "..." },
+  "restantes": 19
+}
+```
+
+El modelo recibe el vehículo (marca, línea, año, combustible y kilometraje, nunca la placa), los testigos con su explicación y los últimos 10 mensajes.
+
+**Seguridad, aplicada por el servidor:**
+
+- **Si el diagnóstico ordena detenerse** y la respuesta sugiere seguir manejando, se descarta y se entrega una respuesta fija. Lo decide lo que declara el modelo (`sugiereSeguirManejando`) y también una revisión del texto, porque el modelo puede declararlo mal.
+- **Tema ajeno al vehículo:** se entrega una respuesta fija.
+- **Diagnóstico en rojo:** siempre se añade un recordatorio fijo al final.
+- **Siempre** se añade "Orientación general. Un mecánico debe confirmar el diagnóstico."
+
+**Errores:** `400` si el mensaje no es válido. `404` si el diagnóstico o la placa no son tuyos. `429 CHAT_LIMIT_REACHED` al llegar a 20 mensajes del usuario en el diagnóstico. `429 RATE_LIMITED` al superar 40 por hora. `503 CHAT_PROVIDER_BUSY` (`provider_busy`), `503 CHAT_UNAVAILABLE` o `503 AI_NOT_CONFIGURED` (`provider_error`). Si falla, no se guarda nada.
 
 ---
 
@@ -431,6 +488,7 @@ Una entrada con su explicación completa. **Solo lee:** no crea otra entrada, no
 | `POST /garage/:plate/diagnoses` con foto o descripción (llama a la IA) | 15 / hora (`limite: "ia"`) | por usuario |
 | `POST /garage/:plate/diagnoses` con `telltaleId` (sin IA) | 60 / hora (`limite: "manual"`) | por usuario |
 | `POST /garage/:plate/diagnoses`, tope de todas las solicitudes, antes de procesar la subida | 75 / hora (`limite: "total"`) | por usuario |
+| `POST /garage/:plate/diagnoses/:id/messages` | 40 / hora, y 20 mensajes por diagnóstico | por usuario |
 
 Los dos primeros contadores son independientes: agotar el de la IA no bloquea la lista, y usar la lista no gasta el cupo de la IA. Las solicitudes rechazadas con `4xx` (imagen inválida, placa ajena) no cuentan para ellos, pero sí para el tope. Sin IA configurada, no se gasta cupo de la IA. Leer el historial o el detalle no cuenta.
 

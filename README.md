@@ -8,20 +8,25 @@ API REST en Express 5 + TypeScript para AutoCheck-CO: un garaje personal con **d
 | --- | --- |
 | Cuentas, login, sesiones con refresh rotativo, verificación de correo, recuperación de contraseña, borrado de cuenta, admin por `ADMIN_EMAILS` | **Real**: funciona contra Postgres |
 | Garaje (`/garage`): vehículos que registra cada usuario | **Real**, con **solo los datos que el usuario registra**. No es una consulta oficial |
-| Catálogo de testigos (`src/data/telltales.ts`, `GET /telltales`) | **Real**: 41 testigos versionados en el código. Es la fuente de verdad de todo el diagnóstico. **Pendiente:** debe revisarlo una persona con conocimiento mecánico antes de la entrega |
+| Diagnóstico con foto o descripción | **IA (Gemini).** Lee todos los testigos encendidos, hasta 8, y **redacta la explicación**. El servidor aplica su piso de seguridad encima. Con `SCAN_PROVIDER=none`, otro proveedor o sin clave, responde 503 |
+| Chat sobre un diagnóstico | **IA (Gemini).** La conversación se guarda en Postgres, sin imágenes. El servidor bloquea cualquier respuesta que sugiera seguir manejando con un testigo que ordena detenerse |
+| Piso de seguridad (`src/domain/diagnosisSafety.ts`) | **Real**: lo aplica el servidor, sin importar lo que diga el modelo. **Pendiente:** debe revisarlo una persona con conocimiento mecánico |
+| Catálogo de testigos (`src/data/telltales.ts`, `GET /telltales`) | **Real**: 41 testigos versionados en el código. Ya **no** es la fuente de las respuestas con IA: solo se usa en la elección manual, disponible con `SCAN_PROVIDER=none`, sin clave o cuando el proveedor falla. **Pendiente:** revisión mecánica |
 | Diagnóstico con elección manual (`telltaleId`) | **Real**, sin IA y sin enviar nada a terceros. Funciona aunque la IA esté apagada |
-| Diagnóstico con foto o descripción | **IA (Gemini), solo para identificar el testigo.** El modelo elige un id del catálogo e informa su confianza, el color y si parpadea; el servidor valida esos datos y redacta la respuesta desde el catálogo. Con `SCAN_PROVIDER=none`, otro proveedor o sin clave, responde 503. La precisión con fotos reales **aún no está medida**: las pruebas simulan a Gemini. Para medirla está `npm run eval:telltales` |
-| Reglas de seguridad (`neverDrive` y orden de detenerse, validación cruzada del color, duda entre dos testigos, check engine parpadeando, descarte de la nota del modelo) | **Real**: las aplica el servidor, sin importar lo que diga el modelo. Los colores admitidos por testigo también están **pendientes de revisión mecánica** |
-| Historial de diagnósticos | **Real**, en Postgres, sin la imagen. El detalle recompone la explicación desde el catálogo vigente, sin crear otra entrada |
+| Historial de diagnósticos | **Real**, en Postgres, sin la imagen. Guarda los testigos con su explicación, para releerla sin llamar a la IA |
 | Lectura de la tarjeta de propiedad (`POST /garage/scan-card`) | Opcional para registrar el vehículo. **Real**, con un **proveedor externo** intercambiable (`SCAN_PROVIDER`): Gemini (plan gratuito, recomendado) o Anthropic. Apagada con `none` o sin la clave del proveedor |
 | Correo (verificación y recuperación) | **Proveedor externo**: Brevo por HTTPS en producción (Render gratuito bloquea SMTP). En desarrollo los enlaces salen por consola |
 
 **El diagnóstico es orientación general:** no reemplaza a un mecánico y no lee los códigos de falla del vehículo. Cada respuesta lo dice.
 
+**Precisión medida:** el 2026-11-05, con `gemini-3.5-flash-lite` y 7 capturas de tableros, las 7 dieron testigos y ninguna dio error. En fotos claras el resultado es estable y coincide con lo que se ve. En fotos pequeñas o borrosas **varía entre corridas** y puede incluir testigos que no están: es una muestra pequeña, sin validación de un mecánico. El modelo también puede clasificar como freno de mano un testigo de frenos: el servidor lo corrige si el nombre deja dudas, no si el modelo afirma sin más que es el freno de mano.
+
+**Cupo de Gemini:** el plan gratuito limita las solicitudes por día y por modelo, y ese cupo se comparte entre todos los usuarios, la lectura de tarjetas y el chat. `gemini-3.5-flash` agotó su cupo diario el 2026-11-05 tras unas decenas de llamadas y tuvo muchos 503. Por eso el modelo recomendado para Render es **`GEMINI_MODEL=gemini-3.5-flash-lite`**.
+
 **Trabajo futuro:**
 
 - Consultar el RUNT con un proveedor autorizado. Se retiró porque la información es confidencial y de pago; ni el código ni los datos asociados siguen en este repositorio.
-- Medir la precisión del reconocimiento con un conjunto amplio de fotos reales de tableros.
+- Medir la precisión del reconocimiento con un conjunto amplio de fotos reales, revisado por un mecánico.
 
 ## Requisitos
 
@@ -51,31 +56,24 @@ Las variables se validan al arrancar con zod; si falta o es inválida alguna, el
 | `npm run migrate:down` | Revierte la última migración                          |
 | `npm run migrate:prod` | Migraciones desde `dist/` (lo usa Render al arrancar) |
 | `npm test`             | Pruebas con el test runner de Node                    |
-| `npm run eval:telltales` | Mide el reconocimiento real con fotos locales       |
+| `npm run eval:telltales` | Lee tus fotos con Gemini real y muestra los testigos |
+| `npm run smoke:gemini` | Lista los modelos de tu clave y prueba cuáles responden |
 
 Las pruebas usan repositorios en memoria, y Gemini simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
 
 ## Evaluar el reconocimiento con fotos reales
 
-`npm run eval:telltales` envía tus fotos a **Gemini de verdad** y compara el resultado con lo esperado. Las respuestas pasan por la misma validación del servidor, así que mide lo que vería el usuario.
+`npm run eval:telltales` envía tus fotos a **Gemini de verdad**. Las respuestas pasan por el mismo piso de seguridad del servidor, así que muestra lo que vería el usuario. No compara con un resultado esperado: revisa la lista contra tus fotos.
 
 1. Define `GEMINI_API_KEY` en tu `.env` local. Funciona aunque `SCAN_PROVIDER` sea `none`.
-2. Crea la carpeta `eval-images/` en la raíz, con tus imágenes y un archivo `expected.csv`. Git ignora esa carpeta.
+2. Copia tus imágenes en la carpeta `eval-images/`, en la raíz. Git la ignora.
 3. Ejecuta el comando.
 
-```csv
-archivo,testigo,color,parpadea
-tablero-1.jpg,presion_aceite,rojo,no
-tablero-2.png,check_engine,amarillo,
-borrosa.jpg,ninguno,,
-```
+Muestra, por archivo, el resultado y la urgencia general y, por testigo, nombre, urgencia, categoría, color y confianza. Los errores solo muestran su tipo.
 
-- **`testigo`:** un id del catálogo, o `ninguno` si lo correcto es pedir otra foto.
-- **`color` y `parpadea`:** opcionales. Si los indicas, la tabla compara lo que informó el modelo.
+Espera 7 segundos entre llamadas para respetar el plan gratuito (`EVAL_DELAY_MS` lo cambia) y, si Gemini responde 429, espera un minuto y reintenta una vez. **Gasta el cupo diario de Gemini, y las fotos van a Google:** usa solo imágenes que puedas compartir. Nunca imprime la clave.
 
-La tabla muestra archivo, esperado, obtenido, confianza y acierto, además de color y parpadeo, y al final el total de aciertos. Un testigo que el modelo reconoce pero el servidor rechaza cuenta como `pide mejor entrada`.
-
-Espera 7 segundos entre llamadas para respetar el plan gratuito (`EVAL_DELAY_MS` lo cambia) y, si Gemini responde 429, espera un minuto y reintenta una vez. **Las fotos van a Google:** usa solo imágenes que puedas compartir. Nunca imprime la clave.
+Si los diagnósticos fallan, `npm run smoke:gemini` muestra qué modelos responden con tu clave y qué cupo se agotó. También acepta modelos concretos: `npm run smoke:gemini -- gemini-3.5-flash-lite`.
 
 ## Endpoints
 
@@ -116,7 +114,8 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 | Sesiones | `refresh_tokens` | Identificador y vigencia de cada sesión (no el token) para poder revocarlas |
 | Tokens de verificación y recuperación | `email_verification_tokens`, `password_reset_tokens` | Solo el hash sha256; expiran en 24 h y 30 min y son de un solo uso |
 | Vehículos del garaje | `user_vehicles` | Datos que el usuario registra (placa, marca, línea, año, color, combustible, kilometraje, etc.). **No** se guarda el documento del propietario |
-| Historial de diagnósticos | `diagnoses` | Testigo, severidad, confianza, descripción que escribió el usuario y fecha, para que consulte sus diagnósticos anteriores. **No** se guarda la imagen. El usuario puede borrar cada uno |
+| Historial de diagnósticos | `diagnoses` | Testigos con su explicación, severidad, confianza, descripción que escribió el usuario y fecha, para que consulte sus diagnósticos anteriores. **No** se guarda la imagen. El usuario puede borrar cada uno |
+| Conversación con la IA | `diagnosis_messages` | Mensajes del usuario y respuestas sobre cada diagnóstico. Solo texto. Se borra con el diagnóstico, el vehículo o la cuenta |
 | Registros técnicos | Logs de Render | IP, método, ruta (con la placa enmascarada y sin cadena de consulta), código de respuesta y hora, para seguridad y diagnóstico. No se registran cuerpos de petición, tokens, imágenes, descripciones, placas ni datos extraídos de documentos |
 
 **Encargados externos**
@@ -125,7 +124,7 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 - **Neon:** aloja la base de datos.
 - **Render:** aloja la API.
 - **Proveedor de lectura de la tarjeta:** recibe la foto, solo si el usuario usa esa función.
-- **Proveedor de diagnóstico (Google, Gemini API):** recibe la foto del tablero, la descripción y la marca, línea, año y combustible del vehículo, solo si el usuario pide el diagnóstico con IA. No recibe la placa.
+- **Proveedor de diagnóstico (Google, Gemini API):** recibe la foto del tablero, la descripción y la marca, línea, año y combustible del vehículo, solo si el usuario pide el diagnóstico con IA. Si usa el chat, recibe además sus mensajes, la conversación, el diagnóstico y el kilometraje. No recibe la placa.
 
 **Foto de la tarjeta de propiedad**
 
@@ -140,7 +139,7 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 
 **Foto del tablero (diagnóstico con IA)**
 
-- **Para qué se envía:** la foto del tablero se envía a un **proveedor externo** de inteligencia artificial para identificar el testigo. El frontend muestra `diagnosis.notice` de `GET /config/public` antes de subirla.
+- **Para qué se envía:** la foto del tablero se envía a un **proveedor externo** de inteligencia artificial para identificar los testigos y explicarlos. El frontend muestra `diagnosis.notice` de `GET /config/public` antes de subirla.
 - **Plan gratuito de Gemini:** el proveedor (Google, en EE. UU.) puede usarla para mejorar sus productos.
 - **Qué hace AutoCheck-CO con ella:** la procesa en memoria y **no la guarda en sus servidores**: ni en disco, ni en la base de datos, ni en logs.
 - **Alternativa:** elegir el testigo de la lista no envía nada a terceros.
@@ -148,7 +147,7 @@ El contrato completo, con ejemplos de cuerpo y respuesta, está en [docs/API.md]
 **Derechos del titular**
 
 - **Conocer y actualizar:** `GET /auth/me`, la edición de los vehículos del garaje y el historial de diagnósticos.
-- **Suprimir:** `DELETE /auth/me` borra la cuenta, sus sesiones, sus tokens, sus vehículos y sus diagnósticos. Borrar un vehículo borra su historial, y cada diagnóstico también se puede borrar por separado.
+- **Suprimir:** `DELETE /auth/me` borra la cuenta, sus sesiones, sus tokens, sus vehículos, sus diagnósticos y sus conversaciones. Borrar un vehículo borra su historial, y cada diagnóstico también se puede borrar por separado.
 - **Revocar la autorización:** se hace eliminando la cuenta.
 - **Otras solicitudes:** al correo del responsable indicado arriba.
 

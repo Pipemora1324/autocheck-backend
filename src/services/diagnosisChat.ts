@@ -9,6 +9,7 @@ import type {
 } from '../repositories/diagnosisRepository.js';
 import type { GarageRepository, GarageVehicleRecord } from '../repositories/garageRepository.js';
 import { resultOf } from './diagnosisService.js';
+import { noRealtime, type RealtimeNotifier } from './realtime.js';
 import { GeminiBusyError, GeminiClient, type GeminiClientOptions } from './geminiClient.js';
 
 export const MAX_USER_MESSAGES_PER_DIAGNOSIS = 20;
@@ -149,7 +150,8 @@ export class DiagnosisChatService {
   constructor(
     private readonly garage: GarageRepository,
     private readonly diagnoses: DiagnosisRepository,
-    private readonly responder: ChatResponder | null
+    private readonly responder: ChatResponder | null,
+    private readonly realtime: RealtimeNotifier = noRealtime
   ) {}
 
   async history(
@@ -218,7 +220,10 @@ export class DiagnosisChatService {
     }
 
     const saved = await this.diagnoses.addExchange(record.id, message, finalAnswer(output, result));
-    return { ...saved, restantes: Math.max(0, MAX_USER_MESSAGES_PER_DIAGNOSIS - used - 1) };
+    const exchange = { ...saved, restantes: Math.max(0, MAX_USER_MESSAGES_PER_DIAGNOSIS - used - 1) };
+    // Ya pasó por finalAnswer: al socket nunca llega texto sin validar del modelo.
+    this.realtime.emit(userId, 'chat:message', { diagnosisId: record.id, ...exchange });
+    return exchange;
   }
 
   // 404 también si es de otro usuario: no se confirma su existencia.

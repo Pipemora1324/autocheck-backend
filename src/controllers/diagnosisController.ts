@@ -1,5 +1,6 @@
 import type { Request, RequestHandler, Response } from 'express';
 import multer from 'multer';
+import { z } from 'zod';
 import { currentUser } from '../middleware/auth.js';
 import type { DiagnosisChatService } from '../services/diagnosisChat.js';
 import type { DiagnosisService } from '../services/diagnosisService.js';
@@ -12,6 +13,8 @@ import {
 import { garagePlateParamsSchema } from '../validation/garageSchemas.js';
 import { MAX_CARD_IMAGE_BYTES } from './cardScanController.js';
 
+/** Opcional: el id con que el cliente reconoce los eventos de progreso de esta solicitud. */
+const PROGRESS_HEADER = 'x-diagnosis-request';
 // Suficiente para 500 caracteres en cualquier codificación UTF-8. El límite real de caracteres lo aplica zod.
 const MAX_TEXT_FIELD_BYTES = 4 * 1024;
 
@@ -30,7 +33,9 @@ export function createDiagnosisController(service: DiagnosisService, chat: Diagn
       // Se suelta la referencia para que la imagen no viva más allá del procesamiento.
       if (request.file) request.file.buffer = Buffer.alloc(0);
 
+      const requestId = z.uuid().safeParse(request.get(PROGRESS_HEADER));
       const result = await service.diagnose(currentUser(request).id, plate, {
+        ...(requestId.success ? { requestId: requestId.data } : {}),
         ...(image ? { image } : {}),
         ...(description ? { description } : {}),
         ...(telltaleId ? { telltaleId } : {}),

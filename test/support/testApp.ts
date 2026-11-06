@@ -6,6 +6,9 @@ import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
 import type { CardScanner } from '../../src/services/cardScanner.js';
 import { CardScanService } from '../../src/services/cardScanService.js';
+import { cacheKeys, noCache, type Cache } from '../../src/services/cache.js';
+import { SocketHub } from '../../src/services/realtime.js';
+import type { RedisStatus } from '../../src/services/redis.js';
 import { DiagnosisChatService, type ChatResponder } from '../../src/services/diagnosisChat.js';
 import { DiagnosisService } from '../../src/services/diagnosisService.js';
 import type { TelltaleIdentifier } from '../../src/services/telltaleIdentifier.js';
@@ -94,12 +97,16 @@ export interface TestAppOptions {
   telltaleIdentifier?: TelltaleIdentifier | null;
   /** null simula un servidor sin IA para el chat. */
   chatResponder?: ChatResponder | null;
+  cache?: Cache;
+  redisStatus?: () => RedisStatus;
   /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */
   mailer?: Mailer;
   adminEmails?: string[];
 }
 
 export interface TestContext {
+  baseUrl: string;
+  hub: SocketHub;
   users: MemoryUserRepository;
   resetTokens: MemoryOneTimeTokenRepository;
   verificationTokens: MemoryOneTimeTokenRepository;
@@ -143,6 +150,8 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     for (const [id, row] of refreshTokens.tokens) if (row.userId === userId) refreshTokens.tokens.delete(id);
   });
 
+  const hub = new SocketHub({ tokens, users, corsOrigins: ['http://localhost:4200'] });
+  const cache = options.cache ?? noCache;
   const authService = new AuthService({
     users,
     resetTokens,
@@ -153,9 +162,13 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     mailer: options.mailer ?? mailer,
     adminEmails: options.adminEmails ?? [],
     appUrl: 'http://localhost:4200',
-    now: () => clock.now
+    now: () => clock.now,
+    onAccountDeleted: async (userId) => {
+      hub.disconnectUser(userId);
+      await cache.deleteByPrefix(cacheKeys.userPrefix(userId));
+    }
   });
-  const garageService = new GarageService(garage);
+  const garageService = new GarageService(garage, { cache, realtime: hub });
   garage.onDeleteVehicle.push((vehicleId) => {
     diagnoses.deleteWhere((item) => item.vehicleId === vehicleId);
   });
@@ -172,11 +185,16 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     authService,
     garageService,
     cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
-    diagnosisService: new DiagnosisService(garage, diagnoses, options.telltaleIdentifier ?? null),
-    diagnosisChatService: new DiagnosisChatService(garage, diagnoses, options.chatResponder ?? null),
+    diagnosisService: new DiagnosisService(garage, diagnoses, options.telltaleIdentifier ?? null, {
+      cache,
+      realtime: hub
+    }),
+    diagnosisChatService: new DiagnosisChatService(garage, diagnoses, options.chatResponder ?? null, hub),
     tokenService: tokens,
     users,
-    rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }
+    rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits },
+    cache,
+    ...(options.redisStatus ? { redisStatus: options.redisStatus } : {})
   });
 
   const server: Server = await new Promise((resolve) => {
@@ -184,6 +202,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
       resolve(listening);
     });
   });
+  hub.attach(server);
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   const request: TestContext['request'] = async (
@@ -211,6 +230,8 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     request('POST', '/auth/register', { body: { email, password: clave, acceptedTerms: true } });
 
   return {
+    baseUrl,
+    hub,
     users,
     resetTokens,
     verificationTokens,
@@ -266,11 +287,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
         cookie: undefined
       };
     },
-    close: () =>
-      new Promise((resolve) =>
-        server.close(() => {
-          resolve();
-        })
-      )
+    // hub.close también cierra el servidor HTTP.
+    close: () => hub.close()
   };
 }

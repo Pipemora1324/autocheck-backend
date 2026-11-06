@@ -22,6 +22,8 @@ import { requestLogger } from './middleware/requestLogger.js';
 import { createAuthRoutes } from './routes/authRoutes.js';
 import { createGarageRoutes } from './routes/garageRoutes.js';
 import type { AuthService } from './services/authService.js';
+import { noCache, type Cache } from './services/cache.js';
+import type { RedisStatus } from './services/redis.js';
 import type { CardScanService } from './services/cardScanService.js';
 import type { DiagnosisChatService } from './services/diagnosisChat.js';
 import type { DiagnosisService } from './services/diagnosisService.js';
@@ -38,6 +40,9 @@ export interface AppDeps {
   tokenService: TokenService;
   users: UserRepository;
   rateLimits?: RateLimitOptions;
+  cache?: Cache;
+  /** Estado de Redis para /health. Sin él, se informa como apagado. */
+  redisStatus?: () => RedisStatus;
 }
 
 export function createApp({
@@ -49,7 +54,9 @@ export function createApp({
   diagnosisChatService,
   tokenService,
   users,
-  rateLimits
+  rateLimits,
+  cache = noCache,
+  redisStatus = () => 'disabled'
 }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
@@ -68,7 +75,8 @@ export function createApp({
   if (config.nodeEnv !== 'test') app.use(requestLogger(config.isProduction));
 
   app.get('/health', (_request, response) => {
-    response.json({ status: 'ok', service: 'AutoCheck-CO' });
+    // Redis es opcional: si falla, la API sigue sana, y solo este campo lo cuenta.
+    response.json({ status: 'ok', service: 'AutoCheck-CO', redis: redisStatus() });
   });
   const publicInfo = createConfigController(cardScanService, diagnosisService);
   app.get('/config/public', publicInfo.publicConfig);
@@ -76,11 +84,12 @@ export function createApp({
   app.use(
     createAuthRoutes(createAuthController(authService, config.cookie), authenticate, createAuthRateLimits(rateLimits))
   );
-  app.get('/telltales', authenticate, createTelltaleController().list);
+  app.get('/telltales', authenticate, createTelltaleController(cache).list);
   const cardScan = createCardScanController(cardScanService);
   const scanCardLimit = perUserHourlyLimiter(
     rateLimits?.scanCardPerHour ?? 10,
-    'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.'
+    'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.',
+    { store: rateLimits?.storeFor?.('scan-card') }
   );
   const diagnosis = createDiagnosisController(diagnosisService, diagnosisChatService);
   const diagnosisLimits = createDiagnosisRateLimits(rateLimits ?? {}, diagnosisService.enabled);
@@ -88,7 +97,7 @@ export function createApp({
   const chatLimit = perUserHourlyLimiter(
     chatMessagesPerHour,
     `Alcanzaste el máximo de ${chatMessagesPerHour} mensajes por hora en el chat. Intenta más tarde.`,
-    { skipClientErrors: true }
+    { skipClientErrors: true, store: rateLimits?.storeFor?.('chat') }
   );
   app.use(
     createGarageRoutes(createGarageController(garageService), authenticate, requireVerified, {

@@ -51,6 +51,8 @@ export interface AuthServiceDeps {
   /** ADMIN_EMAILS: reciben rol admin solo cuando su correo ya está verificado. */
   adminEmails?: string[];
   now?: () => Date;
+  /** Limpieza externa al borrar la cuenta (caché, sockets). Si falla, la cuenta ya quedó borrada. */
+  onAccountDeleted?: (userId: string) => Promise<void>;
 }
 
 /** sha256 de un token de un solo uso: en la base nunca se guarda el token en claro. */
@@ -161,6 +163,9 @@ export class AuthService {
     }
     await this.deps.refreshTokens.revokeAllForUser(userId, this.now());
     await this.deps.users.delete(userId);
+    await this.deps.onAccountDeleted?.(userId).catch((error: unknown) => {
+      console.error('No se pudo terminar la limpieza de la cuenta borrada:', errorMessage(error));
+    });
   }
 
   /** No revela si el correo existe: el controlador responde lo mismo en ambos casos. */

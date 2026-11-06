@@ -1,4 +1,6 @@
 import { plateKind, type VehicleKind } from '../domain/colombianPlate.js';
+import { CACHE_TTL_SECONDS, cached, cacheKeys, noCache, type Cache } from './cache.js';
+import { noRealtime, type RealtimeAction, type RealtimeNotifier } from './realtime.js';
 import { conflict, notFound } from '../errors/httpError.js';
 import type {
   GarageRepository,
@@ -20,11 +22,27 @@ export interface GarageVehicle extends GarageVehicleData {
   updatedAt: string;
 }
 
+export interface GarageServiceDeps {
+  cache?: Cache;
+  realtime?: RealtimeNotifier;
+}
+
 export class GarageService {
-  constructor(private readonly garage: GarageRepository) {}
+  private readonly cache: Cache;
+  private readonly realtime: RealtimeNotifier;
+
+  constructor(
+    private readonly garage: GarageRepository,
+    { cache = noCache, realtime = noRealtime }: GarageServiceDeps = {}
+  ) {
+    this.cache = cache;
+    this.realtime = realtime;
+  }
 
   async list(userId: string): Promise<GarageVehicle[]> {
-    return (await this.garage.list(userId)).map((record) => this.toVehicle(record));
+    return cached(this.cache, cacheKeys.garage(userId), CACHE_TTL_SECONDS.lists, async () =>
+      (await this.garage.list(userId)).map((record) => this.toVehicle(record))
+    );
   }
 
   async get(userId: string, plate: string): Promise<GarageVehicle> {
@@ -40,17 +58,25 @@ export class GarageService {
     const created = await this.garage.create(userId, { ...data, plate, source });
     if (!created)
       throw conflict('Ya tienes un vehículo con esta placa en tu garaje.', { code: DUPLICATE_PLATE, plate });
+    await this.afterChange(userId, 'created', plate);
     return this.toVehicle(created);
   }
 
   async update(userId: string, plate: string, patch: GarageVehiclePatch): Promise<GarageVehicle> {
     const updated = await this.garage.update(userId, plate, patch);
     if (!updated) throw this.notInGarage(plate);
+    await this.afterChange(userId, 'updated', plate);
     return this.toVehicle(updated);
   }
 
   async remove(userId: string, plate: string): Promise<void> {
     if (!(await this.garage.delete(userId, plate))) throw this.notInGarage(plate);
+    await this.afterChange(userId, 'deleted', plate);
+  }
+
+  private async afterChange(userId: string, action: RealtimeAction, plate: string): Promise<void> {
+    await this.cache.deleteByPrefix(cacheKeys.userPrefix(userId));
+    this.realtime.emit(userId, 'garage:changed', { action, plate });
   }
 
   private async findOrThrow(userId: string, plate: string): Promise<GarageVehicleRecord> {

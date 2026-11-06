@@ -11,7 +11,9 @@ import {
   YELLOW_ACTION,
   type FinalTelltale
 } from '../domain/diagnosisSafety.js';
-import { detectImageType } from '../domain/imageSignature.js';
+import { detectImageType, type SupportedImageType } from '../domain/imageSignature.js';
+import { CACHE_TTL_SECONDS, cached, cacheKeys, noCache, type Cache } from './cache.js';
+import { noRealtime, type DiagnosisStage, type RealtimeNotifier } from './realtime.js';
 import { badRequest, HttpError, notFound, serviceUnavailable } from '../errors/httpError.js';
 import type {
   DiagnosisRecord,
@@ -125,6 +127,8 @@ export interface DiagnosisInput {
   description?: string;
   telltaleId?: string;
   blinking?: boolean;
+  /** Generado por el cliente: identifica los eventos de progreso de esta solicitud. */
+  requestId?: string;
 }
 
 interface DiagnosisHistoryItem {
@@ -219,12 +223,33 @@ export function resultOf(record: DiagnosisRecord, fuelType: FuelType | null = nu
 
 const roundConfidence = (confidence: number) => Math.round(confidence * 100) / 100;
 
+export interface DiagnosisServiceDeps {
+  cache?: Cache;
+  realtime?: RealtimeNotifier;
+}
+
+type ProgressReporter = (stage: DiagnosisStage, extra?: { result?: DiagnosisResult; status?: string }) => void;
+
+interface AiDiagnosisInput {
+  image: Buffer | undefined;
+  mediaType: SupportedImageType | null;
+  description: string | undefined;
+  blinking: boolean | undefined;
+}
+
 export class DiagnosisService {
+  private readonly cache: Cache;
+  private readonly realtime: RealtimeNotifier;
+
   constructor(
     private readonly garage: GarageRepository,
     private readonly diagnoses: DiagnosisRepository,
-    private readonly identifier: TelltaleIdentifier | null
-  ) {}
+    private readonly identifier: TelltaleIdentifier | null,
+    { cache = noCache, realtime = noRealtime }: DiagnosisServiceDeps = {}
+  ) {
+    this.cache = cache;
+    this.realtime = realtime;
+  }
 
   get enabled(): boolean {
     return this.identifier !== null;
@@ -238,7 +263,7 @@ export class DiagnosisService {
   async diagnose(
     userId: string,
     plate: string,
-    { image, description, telltaleId, blinking }: DiagnosisInput
+    { image, description, telltaleId, blinking, requestId }: DiagnosisInput
   ): Promise<DiagnosisResult> {
     if (!image && !description && !telltaleId) {
       throw badRequest('Adjunta una foto del testigo, descríbelo o elígelo de la lista.', {
@@ -270,9 +295,32 @@ export class DiagnosisService {
       );
     }
 
+    const progress: ProgressReporter = (stage, extra = {}) => {
+      if (requestId) this.realtime.emit(userId, 'diagnosis:progress', { requestId, stage, ...extra });
+    };
+    progress('queued');
+    const result = await this.diagnoseWithAi(
+      userId,
+      vehicle,
+      this.identifier,
+      { image, mediaType, description, blinking },
+      progress
+    );
+    progress('done', { result });
+    return result;
+  }
+
+  private async diagnoseWithAi(
+    userId: string,
+    vehicle: GarageVehicleRecord,
+    identifier: TelltaleIdentifier,
+    { image, mediaType, description, blinking }: AiDiagnosisInput,
+    progress: ProgressReporter
+  ): Promise<DiagnosisResult> {
+    progress('analyzing');
     let reading: DashboardReading;
     try {
-      reading = await this.identifier.identify({
+      reading = await identifier.identify({
         ...(image && mediaType ? { image: { data: image, mediaType } } : {}),
         ...(description ? { description } : {}),
         ...(blinking !== undefined ? { blinking } : {}),
@@ -281,6 +329,7 @@ export class DiagnosisService {
     } catch (error) {
       // Una falla del proveedor nunca se disfraza de "toma otra foto". Solo se registra la clase de error.
       if (error instanceof TelltaleIdentifierBusyError) {
+        progress('failed', { status: 'provider_busy' });
         console.warn('Diagnóstico con IA: provider_busy.');
         throw serviceUnavailable(DIAGNOSIS_PROVIDER_BUSY_MESSAGE, {
           code: 'DIAGNOSIS_PROVIDER_BUSY',
@@ -288,6 +337,7 @@ export class DiagnosisService {
           retryAfterSeconds: 60
         });
       }
+      progress('failed', { status: 'provider_error' });
       console.error(`Diagnóstico con IA: provider_error (${(error as Error).constructor.name}).`);
       throw serviceUnavailable(DIAGNOSIS_PROVIDER_ERROR_MESSAGE, {
         code: 'DIAGNOSIS_UNAVAILABLE',
@@ -295,6 +345,7 @@ export class DiagnosisService {
       });
     }
 
+    progress('drafting');
     const hadImage = Boolean(image);
     const safety = { ...(blinking !== undefined ? { blinking } : {}), ...(description ? { description } : {}) };
     const testigos = reading.testigos.map((item) => applySafetyFloor(item, safety));
@@ -323,8 +374,10 @@ export class DiagnosisService {
 
   async list(userId: string, plate: string, page: number, limit: number): Promise<DiagnosisHistory> {
     const vehicle = await this.findVehicle(userId, plate);
-    const { items, total } = await this.diagnoses.list(userId, vehicle.id, { limit, offset: (page - 1) * limit });
-    return { items: items.map(toHistoryItem), page, limit, total, totalPages: Math.ceil(total / limit) };
+    return cached(this.cache, cacheKeys.history(userId, vehicle.id, page, limit), CACHE_TTL_SECONDS.lists, async () => {
+      const { items, total } = await this.diagnoses.list(userId, vehicle.id, { limit, offset: (page - 1) * limit });
+      return { items: items.map(toHistoryItem), page, limit, total, totalPages: Math.ceil(total / limit) };
+    });
   }
 
   /** Solo lee: no crea otra entrada ni llama a la IA. */
@@ -344,6 +397,8 @@ export class DiagnosisService {
     const vehicle = await this.findVehicle(userId, plate);
     if (!(await this.diagnoses.delete(userId, vehicle.id, id)))
       throw notFound('No encontramos ese diagnóstico en el historial de este vehículo.');
+    await this.cache.deleteByPrefix(cacheKeys.userPrefix(userId));
+    this.realtime.emit(userId, 'diagnosis:changed', { action: 'deleted', plate: vehicle.plate, id });
   }
 
   private async save(
@@ -365,6 +420,8 @@ export class DiagnosisService {
       descripcion: description ?? null,
       resultado: result
     });
+    await this.cache.deleteByPrefix(cacheKeys.userPrefix(userId));
+    this.realtime.emit(userId, 'diagnosis:changed', { action: 'created', plate: vehicle.plate, id: record.id });
     return toView(record, result);
   }
 

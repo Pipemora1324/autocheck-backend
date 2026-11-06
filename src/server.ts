@@ -9,7 +9,11 @@ import {
 } from './repositories/pgAuthRepositories.js';
 import { PgDiagnosisRepository } from './repositories/pgDiagnosisRepository.js';
 import { PgGarageRepository } from './repositories/pgGarageRepository.js';
+import { rateLimitStores } from './middleware/resilientRateLimitStore.js';
 import { AuthService } from './services/authService.js';
+import { cacheKeys, ResilientCache } from './services/cache.js';
+import { SocketHub } from './services/realtime.js';
+import { RedisConnection } from './services/redis.js';
 import { createCardScanner } from './services/createCardScanner.js';
 import { CardScanService } from './services/cardScanService.js';
 import { createChatResponder, DiagnosisChatService } from './services/diagnosisChat.js';
@@ -35,8 +39,12 @@ function start(): void {
   console.log(`Correo: proveedor ${config.email.provider}.`);
 
   const pool = createPool(config.databaseUrl);
+  const redis = config.redisUrl ? new RedisConnection(config.redisUrl) : null;
+  if (!redis) console.log('Redis apagado (sin REDIS_URL): caché y límites en memoria.');
+  const cache = new ResilientCache(redis);
   const tokenService = new TokenService(config.jwtSecret, config.jwtRefreshSecret);
   const users = new PgUserRepository(pool);
+  const realtime = new SocketHub({ tokens: tokenService, users, corsOrigins: config.corsOrigins });
   const authService = new AuthService({
     users,
     resetTokens: new PgPasswordResetTokenRepository(pool),
@@ -46,20 +54,26 @@ function start(): void {
     tokens: tokenService,
     mailer: createMailer(config),
     appUrl: config.appUrl,
-    adminEmails: config.adminEmails
+    adminEmails: config.adminEmails,
+    onAccountDeleted: async (userId) => {
+      realtime.disconnectUser(userId);
+      await cache.deleteByPrefix(cacheKeys.userPrefix(userId));
+    }
   });
   const garageRepository = new PgGarageRepository(pool);
-  const garageService = new GarageService(garageRepository);
+  const garageService = new GarageService(garageRepository, { cache, realtime });
   const diagnosisRepository = new PgDiagnosisRepository(pool);
   const diagnosisService = new DiagnosisService(
     garageRepository,
     diagnosisRepository,
-    createTelltaleIdentifier(config.scan)
+    createTelltaleIdentifier(config.scan),
+    { cache, realtime }
   );
   const diagnosisChatService = new DiagnosisChatService(
     garageRepository,
     diagnosisRepository,
-    createChatResponder(config.scan)
+    createChatResponder(config.scan),
+    realtime
   );
   if (!diagnosisService.enabled)
     console.warn(
@@ -84,17 +98,31 @@ function start(): void {
     diagnosisService,
     diagnosisChatService,
     tokenService,
-    users
+    users,
+    cache,
+    redisStatus: () => redis?.status() ?? 'disabled',
+    rateLimits: { storeFor: rateLimitStores(redis) }
   });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });
 
+  realtime.attach(server);
+  redis?.onFirstReady(() => {
+    redis.pubSubClients().then(
+      ({ publisher, subscriber }) => {
+        realtime.useRedisAdapter(publisher, subscriber);
+      },
+      () => {
+        console.warn('Socket.IO sigue sin Redis: los eventos solo llegan a esta instancia.');
+      }
+    );
+  });
+
   const shutdown = (signal: string) => {
     console.log(`${signal} recibido, cerrando servidor...`);
-    server.close(() => {
-      void pool.end().finally(() => process.exit(0));
-    });
+    // realtime.close también cierra el servidor HTTP.
+    void Promise.allSettled([realtime.close(), redis?.close(), pool.end()]).finally(() => process.exit(0));
   };
   process.on('SIGTERM', () => {
     shutdown('SIGTERM');

@@ -1,5 +1,5 @@
 import type { Request, RequestHandler } from 'express';
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, type Store } from 'express-rate-limit';
 
 const WINDOW_MS = 15 * 60 * 1000;
 
@@ -34,10 +34,13 @@ export interface RateLimitOptions {
   manualDiagnosesPerHour?: number;
   /** Mensajes al chat con IA, por usuario. */
   chatMessagesPerHour?: number;
+  /** Un almacén por límite. Sin él, cada límite cuenta en la memoria del proceso. */
+  storeFor?: (name: string) => Store;
 }
 
-const limiter = (limit: number, message: string): RequestHandler =>
+const limiter = (limit: number, message: string, store?: Store): RequestHandler =>
   rateLimit({
+    ...(store ? { store } : {}),
     windowMs: WINDOW_MS,
     limit,
     standardHeaders: 'draft-8',
@@ -52,8 +55,9 @@ const emailFromBody = (request: Request): string => {
 
 // Límite por correo, independiente de la IP: frena la fuerza bruta contra una cuenta
 // aunque el atacante rote IPs o falsifique X-Forwarded-For.
-const emailLimiter = (limit: number, message: string): RequestHandler =>
+const emailLimiter = (limit: number, message: string, store?: Store): RequestHandler =>
   rateLimit({
+    ...(store ? { store } : {}),
     windowMs: WINDOW_MS,
     limit,
     standardHeaders: 'draft-8',
@@ -64,41 +68,36 @@ const emailLimiter = (limit: number, message: string): RequestHandler =>
   });
 
 export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLimits {
+  const { storeFor } = options;
+  const byIp = (name: string, limit: number, message: string) => limiter(limit, message, storeFor?.(name));
+  const byEmail = (name: string, limit: number, message: string) => emailLimiter(limit, message, storeFor?.(name));
+  const LOGIN = 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.';
+  const FORGOT = 'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.';
+  const RESEND = 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.';
   return {
-    register: limiter(
+    register: byIp(
+      'register',
       options.registerMax ?? 10,
       'Demasiados registros desde esta conexión. Intenta de nuevo en 15 minutos.'
     ),
-    login: limiter(options.loginMax ?? 10, 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'),
-    loginByEmail: emailLimiter(
-      options.loginEmailMax ?? 10,
-      'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'
-    ),
-    forgotPassword: limiter(
-      options.forgotPasswordMax ?? 5,
-      'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'
-    ),
-    forgotPasswordByEmail: emailLimiter(
-      options.forgotPasswordEmailMax ?? 3,
-      'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'
-    ),
-    resetPassword: limiter(
+    login: byIp('login', options.loginMax ?? 10, LOGIN),
+    loginByEmail: byEmail('login-email', options.loginEmailMax ?? 10, LOGIN),
+    forgotPassword: byIp('forgot', options.forgotPasswordMax ?? 5, FORGOT),
+    forgotPasswordByEmail: byEmail('forgot-email', options.forgotPasswordEmailMax ?? 3, FORGOT),
+    resetPassword: byIp(
+      'reset',
       options.resetPasswordMax ?? 10,
       'Demasiados intentos de restablecimiento. Intenta de nuevo en 15 minutos.'
     ),
-    verifyEmail: limiter(
+    verifyEmail: byIp(
+      'verify',
       options.verifyEmailMax ?? 10,
       'Demasiados intentos de verificación. Intenta de nuevo en 15 minutos.'
     ),
-    resendVerification: limiter(
-      options.resendVerificationMax ?? 5,
-      'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'
-    ),
-    resendVerificationByEmail: emailLimiter(
-      options.resendVerificationEmailMax ?? 3,
-      'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'
-    ),
-    deleteAccount: limiter(
+    resendVerification: byIp('resend', options.resendVerificationMax ?? 5, RESEND),
+    resendVerificationByEmail: byEmail('resend-email', options.resendVerificationEmailMax ?? 3, RESEND),
+    deleteAccount: byIp(
+      'delete-account',
       options.deleteAccountMax ?? 5,
       'Demasiados intentos de eliminar la cuenta. Intenta de nuevo en 15 minutos.'
     )
@@ -115,15 +114,17 @@ interface PerUserLimiterOptions {
   /** Los errores 4xx no llegaron a la operación costosa: no cuentan. */
   skipClientErrors?: boolean;
   skip?: () => boolean;
+  store?: Store | undefined;
 }
 
 /** Límite por usuario autenticado (no por IP) para operaciones costosas, como la lectura de tarjetas. */
 export function perUserHourlyLimiter(
   limit: number,
   message: string,
-  { details, skipClientErrors = false, skip }: PerUserLimiterOptions = {}
+  { details, skipClientErrors = false, skip, store }: PerUserLimiterOptions = {}
 ): RequestHandler {
   return rateLimit({
+    ...(store ? { store } : {}),
     windowMs: HOUR_MS,
     limit,
     standardHeaders: 'draft-8',
@@ -166,7 +167,8 @@ export function createDiagnosisRateLimits(options: RateLimitOptions, aiEnabled: 
     {
       details: { limite: 'ia' satisfies DiagnosisLimitScope },
       skipClientErrors: true,
-      skip: () => !aiEnabled
+      skip: () => !aiEnabled,
+      store: options.storeFor?.('diagnosis-ia')
     }
   );
   const manual = perUserHourlyLimiter(
@@ -174,7 +176,8 @@ export function createDiagnosisRateLimits(options: RateLimitOptions, aiEnabled: 
     `Alcanzaste el máximo de ${manualMax} consultas de la lista por hora. Intenta más tarde.`,
     {
       details: { limite: 'manual' satisfies DiagnosisLimitScope },
-      skipClientErrors: true
+      skipClientErrors: true,
+      store: options.storeFor?.('diagnosis-manual')
     }
   );
   return {
@@ -182,7 +185,8 @@ export function createDiagnosisRateLimits(options: RateLimitOptions, aiEnabled: 
       aiMax + manualMax,
       'Alcanzaste el máximo de solicitudes de diagnóstico por hora. Intenta más tarde.',
       {
-        details: { limite: 'total' satisfies DiagnosisLimitScope }
+        details: { limite: 'total' satisfies DiagnosisLimitScope },
+        store: options.storeFor?.('diagnosis-total')
       }
     ),
     byKind: (request, response, next) => (isManualChoice(request) ? manual : ai)(request, response, next)

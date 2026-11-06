@@ -53,6 +53,11 @@ const envSchema = z
       lowercaseOrUndefined,
       z.enum(['gemini', 'anthropic', 'none'], { error: 'Debe ser gemini, anthropic o none' }).default('none')
     ),
+    // Opcional: sin ella, o si falla, la caché y los límites funcionan en memoria.
+    REDIS_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.url({ protocol: /^rediss?$/, error: 'Debe ser una URL redis:// o rediss:// válida' }).optional()
+    ),
     GEMINI_API_KEY: optionalString,
     GEMINI_MODEL: z.preprocess(
       (value) => (value === '' ? undefined : value),
@@ -182,6 +187,7 @@ export interface AppConfig {
   appUrl: string;
   email: EmailConfig;
   adminEmails: string[];
+  redisUrl: string | null;
 }
 
 export class EnvValidationError extends Error {}
@@ -220,7 +226,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     jwtRefreshSecret: env.JWT_REFRESH_SECRET,
     appUrl: (env.APP_URL ?? devOrigin).replace(/\/+$/, ''),
     email: toEmailConfig(env),
-    adminEmails: splitList(env.ADMIN_EMAILS)
+    adminEmails: splitList(env.ADMIN_EMAILS),
+    redisUrl: env.REDIS_URL ?? null
   };
 }
 

@@ -43,21 +43,31 @@ describe('Piso de seguridad', () => {
   });
 
   it('freno de mano: no sube a rojo por el color, y siempre avisa qué hacer si sigue encendido', () => {
-    const final = applySafetyFloor(telltale({ categoria: 'freno_mano', urgencia: 'rojo', color: 'rojo' }));
+    const final = applySafetyFloor(telltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'rojo', color: 'rojo' }));
     assert.equal(final.urgencia, 'amarillo');
     assert.equal(final.debeDetenerse, false);
     assert.equal(final.accion, PARKING_BRAKE_ACTION);
-    assert.equal(applySafetyFloor(telltale({ categoria: 'freno_mano', urgencia: 'informativo' })).urgencia, 'informativo');
+    assert.equal(applySafetyFloor(telltale({ nombre: 'Testigo de freno de mano', categoria: 'freno_mano', urgencia: 'informativo' })).urgencia, 'informativo');
   });
 
   it('freno de mano con el freno liberado, según el usuario: se trata como frenos', () => {
     for (const description of ['ya solté el freno de mano y sigue prendido', 'el freno de mano está abajo pero no se apaga', 'con el freno liberado sigue encendido']) {
-      const final = applySafetyFloor(telltale({ categoria: 'freno_mano', urgencia: 'informativo' }), { description });
+      const final = applySafetyFloor(telltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'informativo' }), { description });
       assert.equal(final.categoria, 'frenos', description);
       assert.equal(final.urgencia, 'rojo', description);
       assert.equal(final.debeDetenerse, true, description);
     }
-    assert.equal(applySafetyFloor(telltale({ categoria: 'freno_mano', urgencia: 'informativo' }), { description: 'se prendió al parquear' }).categoria, 'freno_mano');
+    assert.equal(applySafetyFloor(telltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'informativo' }), { description: 'se prendió al parquear' }).categoria, 'freno_mano');
+  });
+
+  it('un freno de mano dudoso se trata como frenos: nombres que devolvió Gemini con fotos reales', () => {
+    for (const nombre of ['Freno de mano o nivel de líquido de frenos', 'Testigo de frenos', 'Sistema de frenos / Freno de mano']) {
+      const final = applySafetyFloor(telltale({ nombre, categoria: 'freno_mano', urgencia: 'amarillo', color: 'rojo' }));
+      assert.equal(final.categoria, 'frenos', nombre);
+      assert.equal(final.urgencia, 'rojo', nombre);
+      assert.equal(final.debeDetenerse, true, nombre);
+      assert.equal(final.accion, NEVER_DRIVE_ACTION, nombre);
+    }
   });
 
   it('check engine: sube a rojo si parpadea, lo diga el usuario o el modelo; fijo sigue en amarillo', () => {

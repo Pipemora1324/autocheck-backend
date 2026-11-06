@@ -121,6 +121,7 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
 
   it('el freno de mano con el freno liberado, según el usuario, se trata como frenos', async () => {
     gemini.answer(reading([modelTelltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'informativo' })]));
+    assert.equal((await diagnose({ description: 'lo acabo de poner al parquear' }, JPEG)).body.urgenciaGeneral, 'informativo');
     const response = await diagnose({ description: 'ya solté el freno de mano y sigue prendido' }, JPEG);
     assert.equal(response.body.urgenciaGeneral, 'rojo');
     assert.equal(response.body.testigos[0].categoria, 'frenos');

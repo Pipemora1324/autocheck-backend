@@ -45,6 +45,12 @@ export interface SafetyContext {
 /** El usuario indica que el freno de mano ya está abajo y el testigo no se apaga. */
 const BRAKE_RELEASED = /(freno( de mano)?[^.]{0,40}(liberad|sueltad|solt[eéó]|baj[eéó]|bajad|quit[eéó]|quitad|abajo))|((liber[eéó]|liberad|solt[eéó]|sueltad|baj[eéó]|bajad|quit[eéó]|quitad)[^.]{0,40}freno)|(sigue[^.]{0,20}encendid[^.]{0,30}freno)/i;
 
+/**
+ * Con fotos reales, el modelo clasificó como freno de mano un "Freno de mano o nivel de líquido de frenos" y un "Testigo de frenos".
+ * Bajar a amarillo una posible falla de frenos no es aceptable: solo cuenta si el nombre no deja duda.
+ */
+const isUnambiguousParkingBrake = (name: string): boolean => /freno (de )?(mano|estacionamiento|parqueo)|parking/i.test(name) && !/l[ií]quido|nivel|sistema|falla|\bo\b|\//i.test(name);
+
 export interface FinalTelltale extends Omit<ModelTelltale, 'urgencia'> {
   urgencia: ModelUrgency;
   debeDetenerse: boolean;
@@ -53,8 +59,9 @@ export interface FinalTelltale extends Omit<ModelTelltale, 'urgencia'> {
 
 /** Aplica el piso a un testigo. Es el único camino para que un testigo del modelo llegue al usuario. */
 export function applySafetyFloor(telltale: ModelTelltale, { blinking, description }: SafetyContext = {}): FinalTelltale {
-  // El freno de mano con el freno liberado es una falla de frenos.
-  const categoria: TelltaleCategory = telltale.categoria === 'freno_mano' && description && BRAKE_RELEASED.test(description) ? 'frenos' : telltale.categoria;
+  // El freno de mano con el freno liberado es una falla de frenos, y también lo es cualquier duda entre los dos.
+  const notReallyParkingBrake = telltale.categoria === 'freno_mano' && (!isUnambiguousParkingBrake(telltale.nombre) || (description !== undefined && BRAKE_RELEASED.test(description)));
+  const categoria: TelltaleCategory = notReallyParkingBrake ? 'frenos' : telltale.categoria;
   const isBlinking = blinking === true || telltale.parpadeando === true;
   const stop =
     STOP_CATEGORIES.has(categoria) ||

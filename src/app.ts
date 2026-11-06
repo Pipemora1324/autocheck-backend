@@ -18,6 +18,7 @@ import { createAuthRoutes } from './routes/authRoutes.js';
 import { createGarageRoutes } from './routes/garageRoutes.js';
 import type { AuthService } from './services/authService.js';
 import type { CardScanService } from './services/cardScanService.js';
+import type { DiagnosisChatService } from './services/diagnosisChat.js';
 import type { DiagnosisService } from './services/diagnosisService.js';
 import type { GarageService } from './services/garageService.js';
 import type { TokenService } from './services/tokenService.js';
@@ -28,12 +29,13 @@ export interface AppDeps {
   garageService: GarageService;
   cardScanService: CardScanService;
   diagnosisService: DiagnosisService;
+  diagnosisChatService: DiagnosisChatService;
   tokenService: TokenService;
   users: UserRepository;
   rateLimits?: RateLimitOptions;
 }
 
-export function createApp({ config, authService, garageService, cardScanService, diagnosisService, tokenService, users, rateLimits }: AppDeps): Express {
+export function createApp({ config, authService, garageService, cardScanService, diagnosisService, diagnosisChatService, tokenService, users, rateLimits }: AppDeps): Express {
   const app = express();
   const authenticate = requireAuth(tokenService);
   const requireVerified = requireVerifiedEmail(users);
@@ -60,8 +62,10 @@ export function createApp({ config, authService, garageService, cardScanService,
   app.get('/telltales', authenticate, createTelltaleController().list);
   const cardScan = createCardScanController(cardScanService);
   const scanCardLimit = perUserHourlyLimiter(rateLimits?.scanCardPerHour ?? 10, 'Alcanzaste el máximo de lecturas de tarjeta por hora. Intenta más tarde.');
-  const diagnosis = createDiagnosisController(diagnosisService);
+  const diagnosis = createDiagnosisController(diagnosisService, diagnosisChatService);
   const diagnosisLimits = createDiagnosisRateLimits(rateLimits ?? {}, diagnosisService.enabled);
+  const chatMessagesPerHour = rateLimits?.chatMessagesPerHour ?? 40;
+  const chatLimit = perUserHourlyLimiter(chatMessagesPerHour, `Alcanzaste el máximo de ${chatMessagesPerHour} mensajes por hora en el chat. Intenta más tarde.`, { skipClientErrors: true });
   app.use(
     createGarageRoutes(createGarageController(garageService), authenticate, requireVerified, {
       // El límite va antes de multer para no procesar subidas que se van a rechazar.
@@ -74,6 +78,8 @@ export function createApp({ config, authService, garageService, cardScanService,
         router.get('/garage/:plate/diagnoses', diagnosis.list);
         router.get('/garage/:plate/diagnoses/:id', diagnosis.get);
         router.delete('/garage/:plate/diagnoses/:id', diagnosis.remove);
+        router.get('/garage/:plate/diagnoses/:id/messages', diagnosis.listMessages);
+        router.post('/garage/:plate/diagnoses/:id/messages', chatLimit, diagnosis.sendMessage);
       }
     })
   );

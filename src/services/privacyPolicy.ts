@@ -6,7 +6,7 @@ import type { TelltaleIdentifier } from './telltaleIdentifier.js';
  * Si cambia el texto de la política (README, sección "Tratamiento de datos") o REGISTRATION_CONSENT_TEXT,
  * actualiza esta versión: queda guardada en users.terms_version como evidencia de lo aceptado.
  */
-export const PRIVACY_POLICY_VERSION = '2026-11-04.1';
+export const PRIVACY_POLICY_VERSION = '2026-11-05.1';
 
 /** Texto que el frontend muestra junto a la casilla de aceptación del registro (GET /config/public). */
 export const REGISTRATION_CONSENT_TEXT = [
@@ -18,8 +18,10 @@ export const REGISTRATION_CONSENT_TEXT = [
   'solo para extraer los datos; AutoCheck-CO no la guarda. Con el plan gratuito de Google Gemini, Google puede usar el contenido',
   'enviado para mejorar sus productos. No subiré la tarjeta de otra persona sin su autorización.',
   'Si uso el diagnóstico con inteligencia artificial, la foto del tablero y mi descripción se envían a un proveedor externo de inteligencia artificial',
-  'para identificar el testigo; en el plan gratuito de Google Gemini, el proveedor puede usarlas para mejorar sus productos.',
-  'La foto no se guarda en los servidores de AutoCheck-CO. El diagnóstico es orientación general y un mecánico debe confirmarlo.'
+  'para identificar los testigos y explicarlos; en el plan gratuito de Google Gemini, el proveedor puede usarlas para mejorar sus productos.',
+  'La foto no se guarda en los servidores de AutoCheck-CO. La explicación de cada diagnóstico sí se guarda en mi historial.',
+  'Si converso con la inteligencia artificial sobre un diagnóstico, mis mensajes y sus respuestas se guardan y se envían a ese proveedor, junto con los datos del vehículo (marca, línea, año, combustible y kilometraje) y del diagnóstico, nunca la placa;',
+  'la conversación se borra al borrar el diagnóstico o la cuenta. El diagnóstico es orientación general y un mecánico debe confirmarlo.'
 ].join(' ');
 
 /** Aviso que se muestra antes de subir la foto, según el proveedor activo. null si la lectura está apagada. */
@@ -39,7 +41,8 @@ export function scanProviderNotice(provider: ScanProviderName | 'none'): string 
 /** Aviso que se muestra antes de subir la foto del tablero. null si la IA está apagada (la elección manual no envía nada). */
 export function diagnosisProviderNotice(provider: TelltaleIdentifier['provider'] | 'none'): string | null {
   if (provider !== 'gemini') return null;
-  return 'La foto del tablero y tu descripción se envían a un proveedor externo de inteligencia artificial (Google, Gemini API, plan gratuito) para identificar el testigo. '
+  return 'La foto del tablero y tu descripción se envían a un proveedor externo de inteligencia artificial (Google, Gemini API, plan gratuito) para identificar los testigos. '
     + 'En el plan gratuito, Google puede usarlas para mejorar sus productos. La foto no se guarda en nuestros servidores. '
+    + 'Si usas el chat, tus mensajes también se envían a ese proveedor y la conversación se guarda hasta que borres el diagnóstico o tu cuenta. '
     + 'Evita que aparezcan personas, documentos o la placa. Si prefieres no enviarla, elige el testigo de la lista.';
 }

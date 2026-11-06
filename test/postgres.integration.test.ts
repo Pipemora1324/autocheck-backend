@@ -147,7 +147,7 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const first = (await garage.create(owner.id, { ...vehicleData, plate: 'DGN-001' }))!;
     const second = (await garage.create(owner.id, { ...vehicleData, plate: 'DGN-002' }))!;
 
-    const base = { userId: owner.id, vehicleId: first.id, telltaleId: 'check_engine', severidad: 'amarillo' as const };
+    const base = { userId: owner.id, vehicleId: first.id, telltaleId: 'check_engine', severidad: 'amarillo' as const, resultado: null };
     const older = await diagnoses.create({ ...base, confianza: 0.91, descripcion: 'luz naranja' });
     const newer = await diagnoses.create({ ...base, confianza: null, descripcion: null });
     await diagnoses.create({ ...base, vehicleId: second.id, confianza: 0.8, descripcion: null });
@@ -175,5 +175,44 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
 
     await users.delete(owner.id);
     assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total, 0);
+  });
+
+  it('diagnóstico con IA: guarda los testigos en JSON sin telltale_id, y la conversación se borra en cascada', async () => {
+    const users = new PgUserRepository(pool);
+    const garage = new PgGarageRepository(pool);
+    const diagnoses = new PgDiagnosisRepository(pool);
+    const owner = (await users.create(newUser('chat-pg@example.com')))!;
+    const vehicleData = { brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: null, chassis: null, fuelType: null, serviceType: null, mileageKm: null, source: 'manual' as const };
+    const vehicle = (await garage.create(owner.id, { ...vehicleData, plate: 'CHT-001' }))!;
+    const resultado = { urgenciaGeneral: 'rojo' as const, debeDetenerse: true, accionGeneral: 'Detente.', mensajeGeneral: 'Hola "ñ".', mejorFoto: null, testigos: [] };
+    const base = { userId: owner.id, vehicleId: vehicle.id, telltaleId: null, severidad: 'rojo' as const, confianza: 0.9, descripcion: null, resultado };
+    const countMessages = async (id: string) => (await pool.query('SELECT count(*)::int AS total FROM diagnosis_messages WHERE diagnosis_id = $1', [id])).rows[0].total;
+
+    const first = await diagnoses.create(base);
+    assert.equal(first.telltaleId, null);
+    assert.deepEqual((await diagnoses.find(owner.id, vehicle.id, first.id))?.resultado, resultado);
+
+    const saved = await diagnoses.addExchange(first.id, 'pregunta', 'respuesta');
+    assert.equal(saved.question.role, 'user');
+    assert.equal(saved.answer.role, 'assistant');
+    await diagnoses.addExchange(first.id, 'otra', 'otra respuesta');
+    assert.deepEqual((await diagnoses.listMessages(first.id)).map((item) => item.content), ['pregunta', 'respuesta', 'otra', 'otra respuesta']);
+    assert.equal(await diagnoses.countUserMessages(first.id), 2);
+    await assert.rejects(diagnoses.addExchange(first.id, 'x'.repeat(6001), 'r'), /diagnosis_messages_content_length/);
+    assert.equal(await countMessages(first.id), 4, 'un intercambio inválido no deja la mitad guardada');
+
+    await diagnoses.delete(owner.id, vehicle.id, first.id);
+    assert.equal(await countMessages(first.id), 0);
+
+    const second = await diagnoses.create(base);
+    await diagnoses.addExchange(second.id, 'p', 'r');
+    await garage.delete(owner.id, 'CHT-001');
+    assert.equal(await countMessages(second.id), 0);
+
+    const vehicleAgain = (await garage.create(owner.id, { ...vehicleData, plate: 'CHT-002' }))!;
+    const third = await diagnoses.create({ ...base, vehicleId: vehicleAgain.id });
+    await diagnoses.addExchange(third.id, 'p', 'r');
+    await users.delete(owner.id);
+    assert.equal(await countMessages(third.id), 0);
   });
 });

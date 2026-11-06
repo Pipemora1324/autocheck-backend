@@ -8,7 +8,7 @@ import type {
   UserRepository,
   UserRole
 } from '../../src/repositories/authRepositories.js';
-import type { DiagnosisRecord, DiagnosisRepository, NewDiagnosis } from '../../src/repositories/diagnosisRepository.js';
+import type { DiagnosisMessage, DiagnosisMessageRole, DiagnosisRecord, DiagnosisRepository, NewDiagnosis } from '../../src/repositories/diagnosisRepository.js';
 import type {
   GarageRepository,
   GarageVehiclePatch,
@@ -133,6 +133,7 @@ export class MemoryRefreshTokenRepository implements RefreshTokenRepository {
 
 export class MemoryDiagnosisRepository implements DiagnosisRepository {
   readonly diagnoses: DiagnosisRecord[] = [];
+  readonly messages: Array<DiagnosisMessage & { diagnosisId: string }> = [];
   private sequence = 0;
 
   async create(diagnosis: NewDiagnosis) {
@@ -156,12 +157,39 @@ export class MemoryDiagnosisRepository implements DiagnosisRepository {
     const index = this.diagnoses.findIndex((item) => item.userId === userId && item.vehicleId === vehicleId && item.id === id);
     if (index < 0) return false;
     this.diagnoses.splice(index, 1);
+    this.dropMessages(id);
     return true;
+  }
+
+  async listMessages(diagnosisId: string) {
+    return this.messages.filter((item) => item.diagnosisId === diagnosisId).map(({ diagnosisId: _id, ...message }) => ({ ...message }));
+  }
+
+  async countUserMessages(diagnosisId: string) {
+    return this.messages.filter((item) => item.diagnosisId === diagnosisId && item.role === 'user').length;
+  }
+
+  async addExchange(diagnosisId: string, question: string, answer: string) {
+    const add = (role: DiagnosisMessageRole, content: string): DiagnosisMessage => {
+      const message: DiagnosisMessage = { id: randomUUID(), role, content, createdAt: new Date(Date.now() + this.sequence++).toISOString() };
+      this.messages.push({ ...message, diagnosisId });
+      return message;
+    };
+    return { question: add('user', question), answer: add('assistant', answer) };
   }
 
   /** Simula los ON DELETE CASCADE de la base. */
   deleteWhere(predicate: (item: DiagnosisRecord) => boolean) {
-    for (let index = this.diagnoses.length - 1; index >= 0; index--) if (predicate(this.diagnoses[index]!)) this.diagnoses.splice(index, 1);
+    for (let index = this.diagnoses.length - 1; index >= 0; index--) {
+      if (predicate(this.diagnoses[index]!)) {
+        const [removed] = this.diagnoses.splice(index, 1);
+        this.dropMessages(removed!.id);
+      }
+    }
+  }
+
+  private dropMessages(diagnosisId: string) {
+    for (let index = this.messages.length - 1; index >= 0; index--) if (this.messages[index]!.diagnosisId === diagnosisId) this.messages.splice(index, 1);
   }
 }
 

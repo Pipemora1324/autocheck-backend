@@ -32,6 +32,8 @@ export interface RateLimitOptions {
   aiDiagnosesPerHour?: number;
   /** Diagnósticos con el testigo elegido de la lista. */
   manualDiagnosesPerHour?: number;
+  /** Mensajes al chat con IA, por usuario. */
+  chatMessagesPerHour?: number;
 }
 
 const limiter = (limit: number, message: string): RequestHandler =>

@@ -12,6 +12,7 @@ import { PgGarageRepository } from './repositories/pgGarageRepository.js';
 import { AuthService } from './services/authService.js';
 import { createCardScanner } from './services/createCardScanner.js';
 import { CardScanService } from './services/cardScanService.js';
+import { createChatResponder, DiagnosisChatService } from './services/diagnosisChat.js';
 import { DiagnosisService } from './services/diagnosisService.js';
 import { createTelltaleIdentifier } from './services/geminiTelltaleIdentifier.js';
 import { GarageService } from './services/garageService.js';
@@ -49,7 +50,9 @@ function start(): void {
   });
   const garageRepository = new PgGarageRepository(pool);
   const garageService = new GarageService(garageRepository);
-  const diagnosisService = new DiagnosisService(garageRepository, new PgDiagnosisRepository(pool), createTelltaleIdentifier(config.scan));
+  const diagnosisRepository = new PgDiagnosisRepository(pool);
+  const diagnosisService = new DiagnosisService(garageRepository, diagnosisRepository, createTelltaleIdentifier(config.scan));
+  const diagnosisChatService = new DiagnosisChatService(garageRepository, diagnosisRepository, createChatResponder(config.scan));
   if (!diagnosisService.enabled) console.warn('Diagnóstico con IA apagado (requiere SCAN_PROVIDER=gemini y GEMINI_API_KEY): solo funciona la elección manual.');
   const cardScanService = new CardScanService(createCardScanner(config.scan));
   if (config.scan.provider === 'none') {
@@ -62,7 +65,7 @@ function start(): void {
     console.log(`Lectura de tarjeta: ${config.scan.provider} (${config.scan.model}).`);
   }
 
-  const app = createApp({ config, authService, garageService, cardScanService, diagnosisService, tokenService, users });
+  const app = createApp({ config, authService, garageService, cardScanService, diagnosisService, diagnosisChatService, tokenService, users });
   const server = app.listen(config.port, () => {
     console.log(`AutoCheck-CO API activa en el puerto ${config.port} (${config.nodeEnv})`);
   });

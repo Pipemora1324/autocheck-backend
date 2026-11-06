@@ -6,6 +6,7 @@ import type { RateLimitOptions } from '../../src/middleware/rateLimit.js';
 import { AuthService } from '../../src/services/authService.js';
 import type { CardScanner } from '../../src/services/cardScanner.js';
 import { CardScanService } from '../../src/services/cardScanService.js';
+import { DiagnosisChatService, type ChatResponder } from '../../src/services/diagnosisChat.js';
 import { DiagnosisService } from '../../src/services/diagnosisService.js';
 import type { TelltaleIdentifier } from '../../src/services/telltaleIdentifier.js';
 import { GarageService } from '../../src/services/garageService.js';
@@ -80,7 +81,8 @@ export const NO_RATE_LIMITS: RateLimitOptions = {
   deleteAccountMax: 1000,
   scanCardPerHour: 1000,
   aiDiagnosesPerHour: 1000,
-  manualDiagnosesPerHour: 1000
+  manualDiagnosesPerHour: 1000,
+  chatMessagesPerHour: 1000
 };
 
 export interface TestAppOptions {
@@ -90,6 +92,8 @@ export interface TestAppOptions {
   cardReader?: CardScanner | null;
   /** null simula un servidor con SCAN_PROVIDER=none o sin GEMINI_API_KEY. */
   telltaleIdentifier?: TelltaleIdentifier | null;
+  /** null simula un servidor sin IA para el chat. */
+  chatResponder?: ChatResponder | null;
   /** Reemplaza el CapturingMailer (por ejemplo, el mailer real con un fetch simulado). */
   mailer?: Mailer;
   adminEmails?: string[];
@@ -161,6 +165,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     garageService,
     cardScanService: new CardScanService(options.cardReader ?? null, () => 2026),
     diagnosisService: new DiagnosisService(garage, diagnoses, options.telltaleIdentifier ?? null),
+    diagnosisChatService: new DiagnosisChatService(garage, diagnoses, options.chatResponder ?? null),
     tokenService: tokens,
     users,
     rateLimits: { ...NO_RATE_LIMITS, ...options.rateLimits }

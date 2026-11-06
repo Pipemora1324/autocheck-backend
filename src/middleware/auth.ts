@@ -34,7 +34,14 @@ export function requireVerifiedEmail(users: UserRepository): RequestHandler {
       next(unauthorized());
       return;
     }
-    next(user.emailVerifiedAt ? undefined : forbidden('Confirma tu correo para usar esta función. Revisa tu bandeja de entrada o solicita un nuevo enlace.', { code: EMAIL_NOT_VERIFIED }));
+    next(
+      user.emailVerifiedAt
+        ? undefined
+        : forbidden(
+            'Confirma tu correo para usar esta función. Revisa tu bandeja de entrada o solicita un nuevo enlace.',
+            { code: EMAIL_NOT_VERIFIED }
+          )
+    );
   };
 }
 

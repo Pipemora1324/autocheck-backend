@@ -13,8 +13,10 @@ import {
 } from '../validation/schemas.js';
 
 const REFRESH_COOKIE = 'autocheck_refresh';
-export const FORGOT_PASSWORD_MESSAGE = 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';
-export const RESEND_VERIFICATION_MESSAGE = 'Si el correo está registrado y aún no se ha confirmado, recibirás un nuevo enlace de verificación.';
+export const FORGOT_PASSWORD_MESSAGE =
+  'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';
+export const RESEND_VERIFICATION_MESSAGE =
+  'Si el correo está registrado y aún no se ha confirmado, recibirás un nuevo enlace de verificación.';
 
 export function createAuthController(service: AuthService, cookie: CookieConfig) {
   // Detrás del rewrite de Vercel (/api/* → Render) el navegador ve /api/auth/...: la ruta de la cookie
@@ -30,7 +32,12 @@ export function createAuthController(service: AuthService, cookie: CookieConfig)
     response
       .cookie(REFRESH_COOKIE, session.refreshToken, { ...cookieOptions, expires: session.refreshExpiresAt })
       .status(status)
-      .json({ user: session.user, accessToken: session.accessToken, tokenType: 'Bearer', expiresIn: session.expiresIn });
+      .json({
+        user: session.user,
+        accessToken: session.accessToken,
+        tokenType: 'Bearer',
+        expiresIn: session.expiresIn
+      });
   };
 
   const refreshCookie = (request: Request): string | undefined => {

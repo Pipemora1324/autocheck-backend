@@ -22,7 +22,12 @@ const fakeFetch = (status: number, body: unknown = { messageId: '<id@relay>' }) 
 describe('BrevoEmailSender (fetch simulado)', () => {
   it('envía por la API v3 de Brevo con api-key y el cuerpo documentado', async () => {
     const { impl, calls } = fakeFetch(201);
-    await new BrevoEmailSender(BREVO_KEY, FROM, impl).send({ to: 'ana@example.com', subject: 'Asunto', text: 'Texto', html: '<p>Texto</p>' });
+    await new BrevoEmailSender(BREVO_KEY, FROM, impl).send({
+      to: 'ana@example.com',
+      subject: 'Asunto',
+      text: 'Texto',
+      html: '<p>Texto</p>'
+    });
 
     assert.equal(calls.length, 1);
     const { url, init } = calls[0];
@@ -51,15 +56,26 @@ describe('BrevoEmailSender (fetch simulado)', () => {
   });
 
   it('si la red falla, también lanza EmailDeliveryError', async () => {
-    const failing = (async () => { throw new TypeError('fetch failed'); }) as typeof fetch;
-    await assert.rejects(new BrevoEmailSender(BREVO_KEY, FROM, failing).send({ to: 'a@b.co', subject: 's', text: 't', html: 'h' }), EmailDeliveryError);
+    const failing = (async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    await assert.rejects(
+      new BrevoEmailSender(BREVO_KEY, FROM, failing).send({ to: 'a@b.co', subject: 's', text: 't', html: 'h' }),
+      EmailDeliveryError
+    );
   });
 });
 
 describe('createEmailSender', () => {
   it('elige el proveedor configurado y nunca la consola en producción', () => {
-    assert.ok(createEmailSender({ isProduction: true, email: { provider: 'brevo', apiKey: BREVO_KEY, from: FROM } }) instanceof BrevoEmailSender);
-    assert.throws(() => createEmailSender({ isProduction: true, email: { provider: 'console' } }), /no está permitido en producción/);
+    assert.ok(
+      createEmailSender({ isProduction: true, email: { provider: 'brevo', apiKey: BREVO_KEY, from: FROM } }) instanceof
+        BrevoEmailSender
+    );
+    assert.throws(
+      () => createEmailSender({ isProduction: true, email: { provider: 'console' } }),
+      /no está permitido en producción/
+    );
     assert.ok(createEmailSender({ isProduction: false, email: { provider: 'console' } }));
   });
 });
@@ -67,7 +83,11 @@ describe('createEmailSender', () => {
 describe('Plantillas en español', () => {
   it('verificación y recuperación llevan el enlace en texto y HTML escapado', async () => {
     const sent: Array<{ to: string; subject: string; text: string; html: string }> = [];
-    const sender: EmailSender = { send: async (message) => { sent.push(message); } };
+    const sender: EmailSender = {
+      send: async (message) => {
+        sent.push(message);
+      }
+    };
     const mailer = new TemplatedMailer(sender);
     const link = 'https://app.example/verify-email?token=abc&x=1';
 
@@ -97,7 +117,9 @@ describe('Endpoints con Brevo fallando', () => {
     logs.length = 0;
     console.error = (...args: unknown[]) => logs.push(args.map(String).join(' '));
   });
-  afterEach(() => { console.error = original; });
+  afterEach(() => {
+    console.error = original;
+  });
 
   const flush = () => new Promise((resolve) => setTimeout(resolve, 20));
 

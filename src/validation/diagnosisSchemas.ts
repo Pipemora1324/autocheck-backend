@@ -6,7 +6,8 @@ const MAX_CHAT_MESSAGE_LENGTH = 500;
 
 const blankToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
 /** Un formulario multipart solo envía texto. */
-const textToBoolean = (value: unknown) => (value === 'true' ? true : value === 'false' ? false : blankToUndefined(value));
+const textToBoolean = (value: unknown) =>
+  value === 'true' ? true : value === 'false' ? false : blankToUndefined(value);
 
 /** Campos de texto de POST /garage/:plate/diagnoses. La imagen llega aparte, por multer. */
 export const diagnosisInputSchema = z
@@ -19,7 +20,10 @@ export const diagnosisInputSchema = z
         .max(MAX_DESCRIPTION_LENGTH, `La descripción no puede superar ${MAX_DESCRIPTION_LENGTH} caracteres.`)
         .optional()
     ),
-    telltaleId: z.preprocess(blankToUndefined, z.string({ error: 'El testigo debe ser texto.' }).trim().max(60, 'Ese testigo no está en el catálogo.').optional()),
+    telltaleId: z.preprocess(
+      blankToUndefined,
+      z.string({ error: 'El testigo debe ser texto.' }).trim().max(60, 'Ese testigo no está en el catálogo.').optional()
+    ),
     parpadea: z.preprocess(textToBoolean, z.boolean({ error: 'parpadea debe ser true o false.' }).optional())
   })
   .strict();
@@ -30,8 +34,18 @@ export const diagnosisIdParamsSchema = z.object({
 });
 
 export const diagnosisHistoryQuerySchema = z.object({
-  page: z.coerce.number({ error: 'page debe ser un número.' }).int('page debe ser un entero.').min(1, 'page empieza en 1.').max(100_000).default(1),
-  limit: z.coerce.number({ error: 'limit debe ser un número.' }).int('limit debe ser un entero.').min(1, 'limit mínimo es 1.').max(50, 'limit máximo es 50.').default(20)
+  page: z.coerce
+    .number({ error: 'page debe ser un número.' })
+    .int('page debe ser un entero.')
+    .min(1, 'page empieza en 1.')
+    .max(100_000)
+    .default(1),
+  limit: z.coerce
+    .number({ error: 'limit debe ser un número.' })
+    .int('limit debe ser un entero.')
+    .min(1, 'limit mínimo es 1.')
+    .max(50, 'limit máximo es 50.')
+    .default(20)
 });
 
 export const chatMessageSchema = z

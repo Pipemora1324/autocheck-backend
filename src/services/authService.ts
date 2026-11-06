@@ -11,7 +11,12 @@ import type {
 import type { Mailer } from './mailer.js';
 import type { PasswordHasher } from './passwordHasher.js';
 import { PRIVACY_POLICY_VERSION } from './privacyPolicy.js';
-import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, type AuthUser, type TokenService } from './tokenService.js';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  REFRESH_TOKEN_TTL_SECONDS,
+  type AuthUser,
+  type TokenService
+} from './tokenService.js';
 
 export const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 export const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -54,7 +59,10 @@ export const hashOneTimeToken = (token: string) => createHash('sha256').update(t
 const newOneTimeToken = () => randomBytes(32).toString('base64url');
 
 const toAuthUser = (user: UserRecord): AuthUser => ({ id: user.id, email: user.email, role: user.role });
-const toPublicUser = (user: UserRecord): PublicUser => ({ ...toAuthUser(user), emailVerified: user.emailVerifiedAt !== null });
+const toPublicUser = (user: UserRecord): PublicUser => ({
+  ...toAuthUser(user),
+  emailVerified: user.emailVerifiedAt !== null
+});
 
 export class AuthService {
   private readonly now: () => Date;
@@ -127,10 +135,17 @@ export class AuthService {
     if (claims) await this.deps.refreshTokens.revokeFamily(claims.familyId, this.now());
   }
 
-  async me(userId: string): Promise<PublicUser & { createdAt: string; termsAcceptedAt: string | null; termsVersion: string | null }> {
+  async me(
+    userId: string
+  ): Promise<PublicUser & { createdAt: string; termsAcceptedAt: string | null; termsVersion: string | null }> {
     const user = await this.deps.users.findById(userId);
     if (!user) throw unauthorized();
-    return { ...toPublicUser(user), createdAt: user.createdAt, termsAcceptedAt: user.termsAcceptedAt, termsVersion: user.termsVersion };
+    return {
+      ...toPublicUser(user),
+      createdAt: user.createdAt,
+      termsAcceptedAt: user.termsAcceptedAt,
+      termsVersion: user.termsVersion
+    };
   }
 
   /**

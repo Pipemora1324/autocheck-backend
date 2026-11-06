@@ -19,7 +19,11 @@ describe('smoke:gemini', () => {
 
   it('resume el error del proveedor sin copiar su mensaje', () => {
     const summary = describeProviderError({
-      error: { status: 'RESOURCE_EXHAUSTED', message: 'texto del proveedor', details: [{ violations: [{ quotaId: 'PorDia-FreeTier' }] }, { retryDelay: '30s' }] }
+      error: {
+        status: 'RESOURCE_EXHAUSTED',
+        message: 'texto del proveedor',
+        details: [{ violations: [{ quotaId: 'PorDia-FreeTier' }] }, { retryDelay: '30s' }]
+      }
     } as Parameters<typeof describeProviderError>[0]);
     assert.equal(summary, 'RESOURCE_EXHAUSTED PorDia-FreeTier reintentar en 30s');
     assert.equal(describeProviderError({}), '-');

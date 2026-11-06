@@ -6,7 +6,9 @@ const flushMail = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('ADMIN_EMAILS', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ adminEmails: ['jefe@example.com', 'jefa.antigua@example.com'] }); });
+  before(async () => {
+    ctx = await startTestApp({ adminEmails: ['jefe@example.com', 'jefa.antigua@example.com'] });
+  });
   after(() => ctx.close());
 
   const role = async (email: string) => (await ctx.users.findByEmail(email))!.role;
@@ -23,7 +25,9 @@ describe('ADMIN_EMAILS', () => {
   it('lo asigna al verificar el correo; el siguiente refresh ya lo refleja', async () => {
     const login = await ctx.login('jefe@example.com', DEFAULT_CLAVE);
     await flushMail();
-    const verified = await ctx.request('POST', '/auth/verify-email', { body: { token: ctx.mailer.lastVerificationToken('jefe@example.com') } });
+    const verified = await ctx.request('POST', '/auth/verify-email', {
+      body: { token: ctx.mailer.lastVerificationToken('jefe@example.com') }
+    });
     assert.equal(verified.status, 200);
     assert.equal(await role('jefe@example.com'), 'admin');
 

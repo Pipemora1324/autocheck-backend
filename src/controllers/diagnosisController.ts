@@ -3,7 +3,12 @@ import multer from 'multer';
 import { currentUser } from '../middleware/auth.js';
 import type { DiagnosisChatService } from '../services/diagnosisChat.js';
 import type { DiagnosisService } from '../services/diagnosisService.js';
-import { chatMessageSchema, diagnosisHistoryQuerySchema, diagnosisIdParamsSchema, diagnosisInputSchema } from '../validation/diagnosisSchemas.js';
+import {
+  chatMessageSchema,
+  diagnosisHistoryQuerySchema,
+  diagnosisIdParamsSchema,
+  diagnosisInputSchema
+} from '../validation/diagnosisSchemas.js';
 import { garagePlateParamsSchema } from '../validation/garageSchemas.js';
 import { MAX_CARD_IMAGE_BYTES } from './cardScanController.js';
 
@@ -31,7 +36,10 @@ export function createDiagnosisController(service: DiagnosisService, chat: Diagn
         ...(telltaleId ? { telltaleId } : {}),
         ...(parpadea !== undefined ? { blinking: parpadea } : {})
       });
-      response.set('Cache-Control', 'no-store').status(result.status === 'diagnosed' ? 201 : 200).json(result);
+      response
+        .set('Cache-Control', 'no-store')
+        .status(result.status === 'diagnosed' ? 201 : 200)
+        .json(result);
     },
 
     list: async (request: Request, response: Response): Promise<void> => {
@@ -59,7 +67,10 @@ export function createDiagnosisController(service: DiagnosisService, chat: Diagn
     sendMessage: async (request: Request, response: Response): Promise<void> => {
       const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
       const { message } = chatMessageSchema.parse(request.body ?? {});
-      response.set('Cache-Control', 'no-store').status(201).json(await chat.send(currentUser(request).id, plate, id, message));
+      response
+        .set('Cache-Control', 'no-store')
+        .status(201)
+        .json(await chat.send(currentUser(request).id, plate, id, message));
     }
   };
 }

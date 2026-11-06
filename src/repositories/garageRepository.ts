@@ -1,4 +1,12 @@
-export const FUEL_TYPES = ['Gasolina', 'Diésel', 'Eléctrico', 'Híbrido', 'Gas natural', 'Gasolina y gas', 'Otro'] as const;
+export const FUEL_TYPES = [
+  'Gasolina',
+  'Diésel',
+  'Eléctrico',
+  'Híbrido',
+  'Gas natural',
+  'Gasolina y gas',
+  'Otro'
+] as const;
 export const SERVICE_TYPES = ['Particular', 'Público', 'Oficial', 'Diplomático', 'Otro'] as const;
 
 export type FuelType = (typeof FUEL_TYPES)[number];

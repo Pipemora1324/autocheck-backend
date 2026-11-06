@@ -54,5 +54,9 @@ export interface DiagnosisRepository {
   listMessages(diagnosisId: string): Promise<DiagnosisMessage[]>;
   countUserMessages(diagnosisId: string): Promise<number>;
   /** Guarda la pregunta y la respuesta juntas, o ninguna. */
-  addExchange(diagnosisId: string, question: string, answer: string): Promise<{ question: DiagnosisMessage; answer: DiagnosisMessage }>;
+  addExchange(
+    diagnosisId: string,
+    question: string,
+    answer: string
+  ): Promise<{ question: DiagnosisMessage; answer: DiagnosisMessage }>;
 }

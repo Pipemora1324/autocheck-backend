@@ -33,10 +33,13 @@ export class GarageService {
 
   async create(userId: string, plate: string, data: GarageVehicleData, source: VehicleSource): Promise<GarageVehicle> {
     if ((await this.garage.count(userId)) >= MAX_VEHICLES_PER_USER) {
-      throw conflict(`Alcanzaste el máximo de ${MAX_VEHICLES_PER_USER} vehículos en tu garaje.`, { code: GARAGE_LIMIT_REACHED });
+      throw conflict(`Alcanzaste el máximo de ${MAX_VEHICLES_PER_USER} vehículos en tu garaje.`, {
+        code: GARAGE_LIMIT_REACHED
+      });
     }
     const created = await this.garage.create(userId, { ...data, plate, source });
-    if (!created) throw conflict('Ya tienes un vehículo con esta placa en tu garaje.', { code: DUPLICATE_PLATE, plate });
+    if (!created)
+      throw conflict('Ya tienes un vehículo con esta placa en tu garaje.', { code: DUPLICATE_PLATE, plate });
     return this.toVehicle(created);
   }
 

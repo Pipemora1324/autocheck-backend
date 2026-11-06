@@ -115,9 +115,15 @@ export interface TestContext {
   registerVerified(email: string, clave?: string): Promise<string>;
   login(email: string, clave: string): Promise<TestResponse>;
   /** POST multipart/form-data con un archivo en el campo indicado. */
-  upload(path: string, options: { token?: string; field?: string; data: Uint8Array; type?: string; filename?: string }): Promise<TestResponse>;
+  upload(
+    path: string,
+    options: { token?: string; field?: string; data: Uint8Array; type?: string; filename?: string }
+  ): Promise<TestResponse>;
   /** POST multipart/form-data con campos de texto y, opcionalmente, una imagen en el campo "image". */
-  postForm(path: string, options: { token?: string; fields?: Record<string, string>; image?: Uint8Array }): Promise<TestResponse>;
+  postForm(
+    path: string,
+    options: { token?: string; fields?: Record<string, string>; image?: Uint8Array }
+  ): Promise<TestResponse>;
   close(): Promise<void>;
 }
 
@@ -150,7 +156,9 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     now: () => clock.now
   });
   const garageService = new GarageService(garage);
-  garage.onDeleteVehicle.push((vehicleId) => { diagnoses.deleteWhere((item) => item.vehicleId === vehicleId); });
+  garage.onDeleteVehicle.push((vehicleId) => {
+    diagnoses.deleteWhere((item) => item.vehicleId === vehicleId);
+  });
 
   const app = createApp({
     config: {
@@ -172,11 +180,17 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   });
 
   const server: Server = await new Promise((resolve) => {
-    const listening = app.listen(0, () => { resolve(listening); });
+    const listening = app.listen(0, () => {
+      resolve(listening);
+    });
   });
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-  const request: TestContext['request'] = async (method, path, { body, rawBody, token, cookie, headers: extra } = {}) => {
+  const request: TestContext['request'] = async (
+    method,
+    path,
+    { body, rawBody, token, cookie, headers: extra } = {}
+  ) => {
     const headers: Record<string, string> = { ...extra };
     const payload = rawBody ?? (body === undefined ? undefined : JSON.stringify(body));
     if (payload !== undefined) headers['content-type'] = 'application/json';
@@ -210,8 +224,11 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     register,
     async registerVerified(email, clave = DEFAULT_CLAVE) {
       const registered = await register(email, clave);
-      if (registered.status !== 201) throw new Error(`Registro falló (${registered.status}): ${JSON.stringify(registered.body)}`);
-      const verified = await request('POST', '/auth/verify-email', { body: { token: mailer.lastVerificationToken(registered.body.user.email) } });
+      if (registered.status !== 201)
+        throw new Error(`Registro falló (${registered.status}): ${JSON.stringify(registered.body)}`);
+      const verified = await request('POST', '/auth/verify-email', {
+        body: { token: mailer.lastVerificationToken(registered.body.user.email) }
+      });
       if (verified.status !== 200) throw new Error(`Verificación falló (${verified.status})`);
       return registered.body.accessToken as string;
     },
@@ -219,18 +236,41 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     async upload(path, { token, field = 'image', data, type = 'application/octet-stream', filename = 'tarjeta.jpg' }) {
       const form = new FormData();
       form.append(field, new Blob([new Uint8Array(data)], { type }), filename);
-      const response = await fetch(baseUrl + path, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const response = await fetch(baseUrl + path, {
+        method: 'POST',
+        body: form,
+        headers: token ? { authorization: `Bearer ${token}` } : {}
+      });
       const text = await response.text();
-      return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers, cookie: undefined };
+      return {
+        status: response.status,
+        body: text ? JSON.parse(text) : null,
+        headers: response.headers,
+        cookie: undefined
+      };
     },
     async postForm(path, { token, fields = {}, image }) {
       const form = new FormData();
       for (const [name, value] of Object.entries(fields)) form.append(name, value);
       if (image) form.append('image', new Blob([new Uint8Array(image)], { type: 'image/jpeg' }), 'tablero.jpg');
-      const response = await fetch(baseUrl + path, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const response = await fetch(baseUrl + path, {
+        method: 'POST',
+        body: form,
+        headers: token ? { authorization: `Bearer ${token}` } : {}
+      });
       const text = await response.text();
-      return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers, cookie: undefined };
+      return {
+        status: response.status,
+        body: text ? JSON.parse(text) : null,
+        headers: response.headers,
+        cookie: undefined
+      };
     },
-    close: () => new Promise((resolve) => server.close(() => { resolve(); }))
+    close: () =>
+      new Promise((resolve) =>
+        server.close(() => {
+          resolve();
+        })
+      )
   };
 }

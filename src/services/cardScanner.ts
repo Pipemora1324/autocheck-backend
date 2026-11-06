@@ -22,7 +22,17 @@ export const rawCardExtractionSchema = z.object({
 
 export type RawCardExtraction = z.infer<typeof rawCardExtractionSchema>;
 
-export const CARD_FIELDS = ['plate', 'brand', 'model', 'year', 'color', 'cylinderCc', 'chassis', 'fuelType', 'serviceType'] as const;
+export const CARD_FIELDS = [
+  'plate',
+  'brand',
+  'model',
+  'year',
+  'color',
+  'cylinderCc',
+  'chassis',
+  'fuelType',
+  'serviceType'
+] as const;
 
 export interface CardImage {
   data: Buffer;

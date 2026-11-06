@@ -64,7 +64,10 @@ export class PgUserRepository implements UserRepository {
   }
 
   async markEmailVerified(id: string, at: Date): Promise<void> {
-    await this.pool.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE id = $1', [id, at]);
+    await this.pool.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE id = $1', [
+      id,
+      at
+    ]);
   }
 
   async updateRole(id: string, role: UserRole): Promise<void> {
@@ -86,7 +89,11 @@ class PgOneTimeTokenRepository implements OneTimeTokenRepository {
   ) {}
 
   async create(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
-    await this.pool.query(`INSERT INTO ${this.table} (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`, [userId, tokenHash, expiresAt]);
+    await this.pool.query(`INSERT INTO ${this.table} (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`, [
+      userId,
+      tokenHash,
+      expiresAt
+    ]);
   }
 
   async consume(tokenHash: string, now: Date): Promise<string | null> {
@@ -123,10 +130,12 @@ export class PgRefreshTokenRepository implements RefreshTokenRepository {
   constructor(private readonly pool: pg.Pool) {}
 
   async create(token: RefreshTokenRecord, expiresAt: Date): Promise<void> {
-    await this.pool.query(
-      'INSERT INTO refresh_tokens (id, user_id, family_id, expires_at) VALUES ($1, $2, $3, $4)',
-      [token.id, token.userId, token.familyId, expiresAt]
-    );
+    await this.pool.query('INSERT INTO refresh_tokens (id, user_id, family_id, expires_at) VALUES ($1, $2, $3, $4)', [
+      token.id,
+      token.userId,
+      token.familyId,
+      expiresAt
+    ]);
   }
 
   async revokeIfActive(id: string, now: Date): Promise<RefreshTokenRecord | null> {
@@ -140,10 +149,16 @@ export class PgRefreshTokenRepository implements RefreshTokenRepository {
   }
 
   async revokeFamily(familyId: string, now: Date): Promise<void> {
-    await this.pool.query('UPDATE refresh_tokens SET revoked_at = $2 WHERE family_id = $1 AND revoked_at IS NULL', [familyId, now]);
+    await this.pool.query('UPDATE refresh_tokens SET revoked_at = $2 WHERE family_id = $1 AND revoked_at IS NULL', [
+      familyId,
+      now
+    ]);
   }
 
   async revokeAllForUser(userId: string, now: Date): Promise<void> {
-    await this.pool.query('UPDATE refresh_tokens SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL', [userId, now]);
+    await this.pool.query('UPDATE refresh_tokens SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL', [
+      userId,
+      now
+    ]);
   }
 }

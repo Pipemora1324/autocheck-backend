@@ -1,7 +1,12 @@
 import type { Request, Response } from 'express';
 import type { CardScanService } from '../services/cardScanService.js';
 import type { DiagnosisService } from '../services/diagnosisService.js';
-import { diagnosisProviderNotice, PRIVACY_POLICY_VERSION, REGISTRATION_CONSENT_TEXT, scanProviderNotice } from '../services/privacyPolicy.js';
+import {
+  diagnosisProviderNotice,
+  PRIVACY_POLICY_VERSION,
+  REGISTRATION_CONSENT_TEXT,
+  scanProviderNotice
+} from '../services/privacyPolicy.js';
 
 const cardScanStatus = (cardScan: CardScanService) => ({
   enabled: cardScan.enabled,

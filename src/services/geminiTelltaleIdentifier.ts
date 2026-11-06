@@ -1,5 +1,12 @@
 import type { AppConfig } from '../config/env.js';
-import { GeminiBusyError, GeminiClient, GeminiUnavailableError, GeminiUnusableOutputError, type GeminiClientOptions, type GeminiInputPart } from './geminiClient.js';
+import {
+  GeminiBusyError,
+  GeminiClient,
+  GeminiUnavailableError,
+  GeminiUnusableOutputError,
+  type GeminiClientOptions,
+  type GeminiInputPart
+} from './geminiClient.js';
 import {
   dashboardReadingSchema,
   MAX_TELLTALES_PER_PHOTO,
@@ -42,7 +49,20 @@ export const TELLTALE_RESPONSE_SCHEMA = {
           notaDelVehiculo: { type: ['string', 'null'] },
           confianza: { type: 'number', minimum: 0, maximum: 1 }
         },
-        required: ['nombre', 'descripcionSimbolo', 'color', 'parpadeando', 'categoria', 'urgencia', 'significado', 'porQuePasa', 'puedesRevisar', 'noHagas', 'cuandoIrAlMecanico', 'confianza']
+        required: [
+          'nombre',
+          'descripcionSimbolo',
+          'color',
+          'parpadeando',
+          'categoria',
+          'urgencia',
+          'significado',
+          'porQuePasa',
+          'puedesRevisar',
+          'noHagas',
+          'cuandoIrAlMecanico',
+          'confianza'
+        ]
       }
     },
     mensajeGeneral: { type: 'string' },
@@ -61,7 +81,9 @@ export class GeminiTelltaleIdentifier implements TelltaleIdentifier {
   }
 
   async identify({ image, description, blinking, vehicle }: TelltaleInput): Promise<DashboardReading> {
-    const input: GeminiInputPart[] = [{ type: 'text', text: `${TELLTALE_INSTRUCTIONS}\n\n${telltaleUserPrompt({ description, blinking, vehicle })}` }];
+    const input: GeminiInputPart[] = [
+      { type: 'text', text: `${TELLTALE_INSTRUCTIONS}\n\n${telltaleUserPrompt({ description, blinking, vehicle })}` }
+    ];
     if (image) input.push({ type: 'image', data: image.data.toString('base64'), mime_type: image.mediaType });
 
     let json: unknown;

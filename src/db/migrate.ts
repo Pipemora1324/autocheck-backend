@@ -7,7 +7,11 @@ import { connectionOptions } from './pool.js';
 // Funciona igual desde src/db (tsx) y desde dist/db (build): ambos están a dos niveles de la raíz.
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations', import.meta.url));
 
-export async function runMigrations(databaseUrl: string, direction: 'up' | 'down' = 'up', count?: number): Promise<void> {
+export async function runMigrations(
+  databaseUrl: string,
+  direction: 'up' | 'down' = 'up',
+  count?: number
+): Promise<void> {
   await runner({
     databaseUrl: connectionOptions(databaseUrl),
     dir: MIGRATIONS_DIR,
@@ -15,7 +19,9 @@ export async function runMigrations(databaseUrl: string, direction: 'up' | 'down
     count: count ?? (direction === 'up' ? Infinity : 1),
     migrationsTable: 'pgmigrations',
     checkOrder: true,
-    log: (message) => { console.log(message); }
+    log: (message) => {
+      console.log(message);
+    }
   });
 }
 
@@ -29,7 +35,9 @@ if (isEntryPoint) {
   }
   const direction = process.argv[2] === 'down' ? 'down' : 'up';
   runMigrations(databaseUrl.data, direction)
-    .then(() => { console.log(`Migraciones (${direction}) aplicadas.`); })
+    .then(() => {
+      console.log(`Migraciones (${direction}) aplicadas.`);
+    })
     .catch((error: unknown) => {
       console.error('Error al ejecutar migraciones:', errorMessage(error));
       process.exit(1);

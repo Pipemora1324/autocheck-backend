@@ -14,8 +14,11 @@ export const errorMessage = (error: unknown): string => (error instanceof Error 
 
 export const badRequest = (message: string, details?: Record<string, unknown>) => new HttpError(400, message, details);
 export const unauthorized = (message = 'No autenticado.') => new HttpError(401, message);
-export const forbidden = (message = 'No tienes permisos para realizar esta acción.', details?: Record<string, unknown>) =>
-  new HttpError(403, message, details);
+export const forbidden = (
+  message = 'No tienes permisos para realizar esta acción.',
+  details?: Record<string, unknown>
+) => new HttpError(403, message, details);
 export const notFound = (message: string, details?: Record<string, unknown>) => new HttpError(404, message, details);
 export const conflict = (message: string, details?: Record<string, unknown>) => new HttpError(409, message, details);
-export const serviceUnavailable = (message: string, details?: Record<string, unknown>) => new HttpError(503, message, details);
+export const serviceUnavailable = (message: string, details?: Record<string, unknown>) =>
+  new HttpError(503, message, details);

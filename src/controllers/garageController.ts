@@ -1,7 +1,11 @@
 import type { Request, Response } from 'express';
 import { currentUser } from '../middleware/auth.js';
 import type { GarageService } from '../services/garageService.js';
-import { createGarageVehicleSchema, garagePlateParamsSchema, updateGarageVehicleSchema } from '../validation/garageSchemas.js';
+import {
+  createGarageVehicleSchema,
+  garagePlateParamsSchema,
+  updateGarageVehicleSchema
+} from '../validation/garageSchemas.js';
 
 export function createGarageController(service: GarageService) {
   return {

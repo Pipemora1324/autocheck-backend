@@ -14,7 +14,10 @@ export const cardImageUpload: RequestHandler = multer({
 export function createCardScanController(service: CardScanService) {
   return {
     scan: async (request: Request, response: Response): Promise<void> => {
-      if (!request.file) throw badRequest('Adjunta la foto de la tarjeta en el campo "image" (multipart/form-data).', { code: 'IMAGE_REQUIRED' });
+      if (!request.file)
+        throw badRequest('Adjunta la foto de la tarjeta en el campo "image" (multipart/form-data).', {
+          code: 'IMAGE_REQUIRED'
+        });
       const image = request.file.buffer;
       // Se suelta la referencia para que la imagen no viva más allá del procesamiento.
       request.file.buffer = Buffer.alloc(0);

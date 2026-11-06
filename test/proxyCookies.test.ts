@@ -9,7 +9,9 @@ const cookieHeader = (response: { headers: Headers }) =>
 
 describe('Cookie de refresh detrás del rewrite /api/*', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ config: { cookie: PROD_COOKIE } }); });
+  before(async () => {
+    ctx = await startTestApp({ config: { cookie: PROD_COOKIE } });
+  });
   after(() => ctx.close());
 
   it('usa COOKIE_PATH, SameSite=Strict, Secure y HttpOnly', async () => {
@@ -42,11 +44,16 @@ describe('Cookie de refresh detrás del rewrite /api/*', () => {
 describe('Rate limit con X-Forwarded-For', () => {
   const VERCEL_EDGE = '76.76.21.21';
   const attempt = (ctx: TestContext, forwardedFor: string, email = 'nadie@example.com') =>
-    ctx.request('POST', '/auth/login', { body: { email, password: CLAVE_ERRADA }, headers: { 'x-forwarded-for': forwardedFor } });
+    ctx.request('POST', '/auth/login', {
+      body: { email, password: CLAVE_ERRADA },
+      headers: { 'x-forwarded-for': forwardedFor }
+    });
 
   describe('con TRUST_PROXY=2 (Vercel + Render)', () => {
     let ctx: TestContext;
-    before(async () => { ctx = await startTestApp({ config: { trustProxy: 2 }, rateLimits: { loginMax: 2 } }); });
+    before(async () => {
+      ctx = await startTestApp({ config: { trustProxy: 2 }, rateLimits: { loginMax: 2 } });
+    });
     after(() => ctx.close());
 
     it('cuenta por la IP real del cliente, no por la de Vercel', async () => {
@@ -64,7 +71,9 @@ describe('Rate limit con X-Forwarded-For', () => {
 
   describe('con TRUST_PROXY=0 (desarrollo)', () => {
     let ctx: TestContext;
-    before(async () => { ctx = await startTestApp({ config: { trustProxy: 0 }, rateLimits: { loginMax: 2 } }); });
+    before(async () => {
+      ctx = await startTestApp({ config: { trustProxy: 0 }, rateLimits: { loginMax: 2 } });
+    });
     after(() => ctx.close());
 
     it('no confía en X-Forwarded-For: rotar el encabezado no evade el límite', async () => {
@@ -76,7 +85,9 @@ describe('Rate limit con X-Forwarded-For', () => {
 
   describe('límite por correo', () => {
     let ctx: TestContext;
-    before(async () => { ctx = await startTestApp({ config: { trustProxy: 2 }, rateLimits: { loginEmailMax: 2 } }); });
+    before(async () => {
+      ctx = await startTestApp({ config: { trustProxy: 2 }, rateLimits: { loginEmailMax: 2 } });
+    });
     after(() => ctx.close());
 
     it('frena intentos contra la misma cuenta aunque cambie la IP', async () => {
@@ -90,7 +101,9 @@ describe('Rate limit con X-Forwarded-For', () => {
 
 describe('CORS con credentials', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ config: { corsOrigins: ['https://autocheck.vercel.app'] } }); });
+  before(async () => {
+    ctx = await startTestApp({ config: { corsOrigins: ['https://autocheck.vercel.app'] } });
+  });
   after(() => ctx.close());
 
   it('permite el origen configurado con credentials', async () => {
@@ -101,7 +114,11 @@ describe('CORS con credentials', () => {
 
   it('responde el preflight solo al origen permitido', async () => {
     const allowed = await ctx.request('OPTIONS', '/auth/login', {
-      headers: { origin: 'https://autocheck.vercel.app', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' }
+      headers: {
+        origin: 'https://autocheck.vercel.app',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type'
+      }
     });
     assert.equal(allowed.status, 204);
     assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://autocheck.vercel.app');

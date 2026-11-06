@@ -16,11 +16,16 @@ const newPasswordSchema = z
 export const registerSchema = z.object({
   email: emailSchema,
   password: newPasswordSchema,
-  acceptedTerms: z.literal(true, { error: 'Debes aceptar la política de tratamiento de datos personales para crear tu cuenta.' })
+  acceptedTerms: z.literal(true, {
+    error: 'Debes aceptar la política de tratamiento de datos personales para crear tu cuenta.'
+  })
 });
 
 export const deleteAccountSchema = z.object({
-  password: z.string({ error: 'Confirma tu contraseña para eliminar la cuenta.' }).min(1, 'Confirma tu contraseña para eliminar la cuenta.').max(128)
+  password: z
+    .string({ error: 'Confirma tu contraseña para eliminar la cuenta.' })
+    .min(1, 'Confirma tu contraseña para eliminar la cuenta.')
+    .max(128)
 });
 
 export const loginSchema = z.object({
@@ -30,7 +35,11 @@ export const loginSchema = z.object({
 
 export const forgotPasswordSchema = z.object({ email: emailSchema });
 
-const oneTimeTokenSchema = z.string({ error: 'El token es obligatorio.' }).trim().min(1, 'El token es obligatorio.').max(256);
+const oneTimeTokenSchema = z
+  .string({ error: 'El token es obligatorio.' })
+  .trim()
+  .min(1, 'El token es obligatorio.')
+  .max(256);
 
 export const resetPasswordSchema = z.object({
   token: oneTimeTokenSchema,

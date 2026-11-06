@@ -9,7 +9,13 @@ import {
   type CardScanner,
   type RawCardExtraction
 } from './cardScanner.js';
-import { GeminiBusyError, GeminiClient, GeminiUnavailableError, GeminiUnusableOutputError, type GeminiClientOptions } from './geminiClient.js';
+import {
+  GeminiBusyError,
+  GeminiClient,
+  GeminiUnavailableError,
+  GeminiUnusableOutputError,
+  type GeminiClientOptions
+} from './geminiClient.js';
 
 const nullableField = {
   type: 'object',

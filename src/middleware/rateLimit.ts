@@ -65,16 +65,43 @@ const emailLimiter = (limit: number, message: string): RequestHandler =>
 
 export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLimits {
   return {
-    register: limiter(options.registerMax ?? 10, 'Demasiados registros desde esta conexión. Intenta de nuevo en 15 minutos.'),
+    register: limiter(
+      options.registerMax ?? 10,
+      'Demasiados registros desde esta conexión. Intenta de nuevo en 15 minutos.'
+    ),
     login: limiter(options.loginMax ?? 10, 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'),
-    loginByEmail: emailLimiter(options.loginEmailMax ?? 10, 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'),
-    forgotPassword: limiter(options.forgotPasswordMax ?? 5, 'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'),
-    forgotPasswordByEmail: emailLimiter(options.forgotPasswordEmailMax ?? 3, 'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'),
-    resetPassword: limiter(options.resetPasswordMax ?? 10, 'Demasiados intentos de restablecimiento. Intenta de nuevo en 15 minutos.'),
-    verifyEmail: limiter(options.verifyEmailMax ?? 10, 'Demasiados intentos de verificación. Intenta de nuevo en 15 minutos.'),
-    resendVerification: limiter(options.resendVerificationMax ?? 5, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'),
-    resendVerificationByEmail: emailLimiter(options.resendVerificationEmailMax ?? 3, 'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'),
-    deleteAccount: limiter(options.deleteAccountMax ?? 5, 'Demasiados intentos de eliminar la cuenta. Intenta de nuevo en 15 minutos.')
+    loginByEmail: emailLimiter(
+      options.loginEmailMax ?? 10,
+      'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'
+    ),
+    forgotPassword: limiter(
+      options.forgotPasswordMax ?? 5,
+      'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'
+    ),
+    forgotPasswordByEmail: emailLimiter(
+      options.forgotPasswordEmailMax ?? 3,
+      'Demasiadas solicitudes de recuperación. Intenta de nuevo en 15 minutos.'
+    ),
+    resetPassword: limiter(
+      options.resetPasswordMax ?? 10,
+      'Demasiados intentos de restablecimiento. Intenta de nuevo en 15 minutos.'
+    ),
+    verifyEmail: limiter(
+      options.verifyEmailMax ?? 10,
+      'Demasiados intentos de verificación. Intenta de nuevo en 15 minutos.'
+    ),
+    resendVerification: limiter(
+      options.resendVerificationMax ?? 5,
+      'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'
+    ),
+    resendVerificationByEmail: emailLimiter(
+      options.resendVerificationEmailMax ?? 3,
+      'Demasiadas solicitudes de verificación. Intenta de nuevo en 15 minutos.'
+    ),
+    deleteAccount: limiter(
+      options.deleteAccountMax ?? 5,
+      'Demasiados intentos de eliminar la cuenta. Intenta de nuevo en 15 minutos.'
+    )
   };
 }
 
@@ -91,7 +118,11 @@ interface PerUserLimiterOptions {
 }
 
 /** Límite por usuario autenticado (no por IP) para operaciones costosas, como la lectura de tarjetas. */
-export function perUserHourlyLimiter(limit: number, message: string, { details, skipClientErrors = false, skip }: PerUserLimiterOptions = {}): RequestHandler {
+export function perUserHourlyLimiter(
+  limit: number,
+  message: string,
+  { details, skipClientErrors = false, skip }: PerUserLimiterOptions = {}
+): RequestHandler {
   return rateLimit({
     windowMs: HOUR_MS,
     limit,
@@ -101,7 +132,11 @@ export function perUserHourlyLimiter(limit: number, message: string, { details, 
     keyGenerator: (request) => `user:${request.user?.id ?? 'anonimo'}`,
     ...(skip ? { skip } : {}),
     ...(skipClientErrors
-      ? { skipFailedRequests: true, requestWasSuccessful: (_request: Request, response: { statusCode: number }) => response.statusCode < 400 || response.statusCode >= 500 }
+      ? {
+          skipFailedRequests: true,
+          requestWasSuccessful: (_request: Request, response: { statusCode: number }) =>
+            response.statusCode < 400 || response.statusCode >= 500
+        }
       : {})
   });
 }
@@ -125,19 +160,31 @@ export interface DiagnosisRateLimits {
 export function createDiagnosisRateLimits(options: RateLimitOptions, aiEnabled: boolean): DiagnosisRateLimits {
   const aiMax = options.aiDiagnosesPerHour ?? 15;
   const manualMax = options.manualDiagnosesPerHour ?? 60;
-  const ai = perUserHourlyLimiter(aiMax, `Alcanzaste el máximo de ${aiMax} diagnósticos con IA por hora. Intenta más tarde o elige el testigo de la lista, que no cuenta para este límite.`, {
-    details: { limite: 'ia' satisfies DiagnosisLimitScope },
-    skipClientErrors: true,
-    skip: () => !aiEnabled
-  });
-  const manual = perUserHourlyLimiter(manualMax, `Alcanzaste el máximo de ${manualMax} consultas de la lista por hora. Intenta más tarde.`, {
-    details: { limite: 'manual' satisfies DiagnosisLimitScope },
-    skipClientErrors: true
-  });
+  const ai = perUserHourlyLimiter(
+    aiMax,
+    `Alcanzaste el máximo de ${aiMax} diagnósticos con IA por hora. Intenta más tarde o elige el testigo de la lista, que no cuenta para este límite.`,
+    {
+      details: { limite: 'ia' satisfies DiagnosisLimitScope },
+      skipClientErrors: true,
+      skip: () => !aiEnabled
+    }
+  );
+  const manual = perUserHourlyLimiter(
+    manualMax,
+    `Alcanzaste el máximo de ${manualMax} consultas de la lista por hora. Intenta más tarde.`,
+    {
+      details: { limite: 'manual' satisfies DiagnosisLimitScope },
+      skipClientErrors: true
+    }
+  );
   return {
-    uploads: perUserHourlyLimiter(aiMax + manualMax, 'Alcanzaste el máximo de solicitudes de diagnóstico por hora. Intenta más tarde.', {
-      details: { limite: 'total' satisfies DiagnosisLimitScope }
-    }),
+    uploads: perUserHourlyLimiter(
+      aiMax + manualMax,
+      'Alcanzaste el máximo de solicitudes de diagnóstico por hora. Intenta más tarde.',
+      {
+        details: { limite: 'total' satisfies DiagnosisLimitScope }
+      }
+    ),
     byKind: (request, response, next) => (isManualChoice(request) ? manual : ai)(request, response, next)
   };
 }

@@ -13,7 +13,10 @@ export default tseslint.config(
       parserOptions: { project: './tsconfig.test.json', tsconfigRootDir: import.meta.dirname }
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' }
+      ],
       // Los números en plantillas de texto (años, puertos, códigos HTTP) son seguros y habituales aquí.
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }]
     }

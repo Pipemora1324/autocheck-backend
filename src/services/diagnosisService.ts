@@ -13,20 +13,33 @@ import {
 } from '../domain/diagnosisSafety.js';
 import { detectImageType } from '../domain/imageSignature.js';
 import { badRequest, HttpError, notFound, serviceUnavailable } from '../errors/httpError.js';
-import type { DiagnosisRecord, DiagnosisRepository, StoredDiagnosisResult } from '../repositories/diagnosisRepository.js';
+import type {
+  DiagnosisRecord,
+  DiagnosisRepository,
+  StoredDiagnosisResult
+} from '../repositories/diagnosisRepository.js';
 import type { FuelType, GarageRepository, GarageVehicleRecord } from '../repositories/garageRepository.js';
-import { TelltaleIdentifierBusyError, type DashboardReading, type TelltaleCategory, type TelltaleIdentifier } from './telltaleIdentifier.js';
+import {
+  TelltaleIdentifierBusyError,
+  type DashboardReading,
+  type TelltaleCategory,
+  type TelltaleIdentifier
+} from './telltaleIdentifier.js';
 
 export { DIAGNOSIS_DISCLAIMER, NEVER_DRIVE_ACTION, SAFETY_SYSTEM_ACTION };
 
-export const DIAGNOSIS_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de diagnóstico con IA está ocupado. Intenta en un minuto o elige el testigo de la lista.';
-export const DIAGNOSIS_PROVIDER_ERROR_MESSAGE = 'El diagnóstico con IA falló por un problema del servicio, no por tu foto. Intenta más tarde o elige el testigo de la lista.';
-const WHILE_UNIDENTIFIED_WARNING = 'Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.';
+export const DIAGNOSIS_PROVIDER_BUSY_MESSAGE =
+  'El servicio gratuito de diagnóstico con IA está ocupado. Intenta en un minuto o elige el testigo de la lista.';
+export const DIAGNOSIS_PROVIDER_ERROR_MESSAGE =
+  'El diagnóstico con IA falló por un problema del servicio, no por tu foto. Intenta más tarde o elige el testigo de la lista.';
+const WHILE_UNIDENTIFIED_WARNING =
+  'Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.';
 
 /** Por debajo de esto, y sin ningún testigo grave, se pide otra foto en lugar de mostrar una lectura poco fiable. */
 const LOW_CONFIDENCE = 0.3;
 
-const NEXT_STEP_WITH_IMAGE = 'Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.';
+const NEXT_STEP_WITH_IMAGE =
+  'Toma otra foto más cercana, sin reflejos y con el tablero encendido, o elígelo de la lista.';
 const NEXT_STEP_WITH_TEXT = 'Cuéntanos su color y su forma, agrega una foto del tablero o elígelo de la lista.';
 const NOT_RECOGNIZED_MESSAGE = 'No vimos testigos encendidos en lo que nos enviaste.';
 
@@ -40,7 +53,12 @@ const POWERTRAIN_BY_FUEL: Record<FuelType, TelltalePowertrain | null> = {
   Otro: null
 };
 
-const POWERTRAIN_LABEL: Record<TelltalePowertrain, string> = { gasolina: 'gasolina', diesel: 'diésel', hibrido: 'híbridos', electrico: 'eléctricos' };
+const POWERTRAIN_LABEL: Record<TelltalePowertrain, string> = {
+  gasolina: 'gasolina',
+  diesel: 'diésel',
+  hibrido: 'híbridos',
+  electrico: 'eléctricos'
+};
 
 const CATALOG_CATEGORY: Record<string, TelltaleCategory> = {
   presion_aceite: 'aceite',
@@ -146,7 +164,10 @@ const actionFor = (severity: TelltaleSeverity, stop: boolean, id: string): strin
  * Elección manual: la explicación sale del catálogo y conserva sus garantías.
  * neverDrive siempre es rojo con la orden de detenerse. Un parpadeo confirmado de un testigo con siParpadea (check engine) se trata igual.
  */
-export function composeFromCatalog(telltale: Telltale, options: { fuelType?: FuelType | null; blinking?: boolean } = {}): FinalTelltale {
+export function composeFromCatalog(
+  telltale: Telltale,
+  options: { fuelType?: FuelType | null; blinking?: boolean } = {}
+): FinalTelltale {
   const blinking = options.blinking === true ? telltale.siParpadea : undefined;
   const stop = telltale.neverDrive || blinking !== undefined;
   const urgencia: TelltaleSeverity = stop ? 'rojo' : telltale.severidad;
@@ -173,7 +194,8 @@ export function composeFromCatalog(telltale: Telltale, options: { fuelType?: Fue
 function summarize(testigos: FinalTelltale[], mensajeGeneral: string, mejorFoto: string | null): StoredDiagnosisResult {
   const urgenciaGeneral = worstUrgency(testigos.map((item) => item.urgencia));
   const debeDetenerse = testigos.some((item) => item.debeDetenerse);
-  const principal = testigos.find((item) => item.debeDetenerse) ?? testigos.find((item) => item.urgencia === urgenciaGeneral);
+  const principal =
+    testigos.find((item) => item.debeDetenerse) ?? testigos.find((item) => item.urgencia === urgenciaGeneral);
   // Los más graves primero, sin importar cómo los ordenó el modelo.
   const order: Record<TelltaleSeverity, number> = { rojo: 0, amarillo: 1, informativo: 2 };
   return {
@@ -213,9 +235,15 @@ export class DiagnosisService {
   }
 
   /** La imagen se procesa en memoria y se descarta: no se escribe en disco, base de datos ni logs. */
-  async diagnose(userId: string, plate: string, { image, description, telltaleId, blinking }: DiagnosisInput): Promise<DiagnosisResult> {
+  async diagnose(
+    userId: string,
+    plate: string,
+    { image, description, telltaleId, blinking }: DiagnosisInput
+  ): Promise<DiagnosisResult> {
     if (!image && !description && !telltaleId) {
-      throw badRequest('Adjunta una foto del testigo, descríbelo o elígelo de la lista.', { code: 'DIAGNOSIS_INPUT_REQUIRED' });
+      throw badRequest('Adjunta una foto del testigo, descríbelo o elígelo de la lista.', {
+        code: 'DIAGNOSIS_INPUT_REQUIRED'
+      });
     }
     const mediaType = image ? detectImageType(image) : null;
     if (image && !mediaType) {
@@ -226,13 +254,20 @@ export class DiagnosisService {
     // Elección manual: es decisión del usuario y nunca pasa por la IA.
     if (telltaleId) {
       const telltale = findTelltale(telltaleId);
-      if (!telltale) throw badRequest('Ese testigo no está en el catálogo. Elige uno de la lista.', { code: 'UNKNOWN_TELLTALE' });
-      const content = composeFromCatalog(telltale, { fuelType: vehicle.fuelType, ...(blinking !== undefined ? { blinking } : {}) });
+      if (!telltale)
+        throw badRequest('Ese testigo no está en el catálogo. Elige uno de la lista.', { code: 'UNKNOWN_TELLTALE' });
+      const content = composeFromCatalog(telltale, {
+        fuelType: vehicle.fuelType,
+        ...(blinking !== undefined ? { blinking } : {})
+      });
       return this.save(userId, vehicle, summarize([content], '', null), { telltaleId, confianza: null, description });
     }
 
     if (!this.identifier) {
-      throw serviceUnavailable('El diagnóstico con IA no está configurado en este servidor. Elige el testigo de la lista.', { code: 'AI_NOT_CONFIGURED', status: 'provider_error' });
+      throw serviceUnavailable(
+        'El diagnóstico con IA no está configurado en este servidor. Elige el testigo de la lista.',
+        { code: 'AI_NOT_CONFIGURED', status: 'provider_error' }
+      );
     }
 
     let reading: DashboardReading;
@@ -247,17 +282,25 @@ export class DiagnosisService {
       // Una falla del proveedor nunca se disfraza de "toma otra foto". Solo se registra la clase de error.
       if (error instanceof TelltaleIdentifierBusyError) {
         console.warn('Diagnóstico con IA: provider_busy.');
-        throw serviceUnavailable(DIAGNOSIS_PROVIDER_BUSY_MESSAGE, { code: 'DIAGNOSIS_PROVIDER_BUSY', status: 'provider_busy' satisfies DiagnosisErrorKind, retryAfterSeconds: 60 });
+        throw serviceUnavailable(DIAGNOSIS_PROVIDER_BUSY_MESSAGE, {
+          code: 'DIAGNOSIS_PROVIDER_BUSY',
+          status: 'provider_busy' satisfies DiagnosisErrorKind,
+          retryAfterSeconds: 60
+        });
       }
       console.error(`Diagnóstico con IA: provider_error (${(error as Error).constructor.name}).`);
-      throw serviceUnavailable(DIAGNOSIS_PROVIDER_ERROR_MESSAGE, { code: 'DIAGNOSIS_UNAVAILABLE', status: 'provider_error' satisfies DiagnosisErrorKind });
+      throw serviceUnavailable(DIAGNOSIS_PROVIDER_ERROR_MESSAGE, {
+        code: 'DIAGNOSIS_UNAVAILABLE',
+        status: 'provider_error' satisfies DiagnosisErrorKind
+      });
     }
 
     const hadImage = Boolean(image);
     const safety = { ...(blinking !== undefined ? { blinking } : {}), ...(description ? { description } : {}) };
     const testigos = reading.testigos.map((item) => applySafetyFloor(item, safety));
     if (testigos.length === 0) {
-      if (reading.necesitaMejorFoto) return this.needsBetterInput(hadImage, 'no_telltales_found', reading.motivoMejorFoto);
+      if (reading.necesitaMejorFoto)
+        return this.needsBetterInput(hadImage, 'no_telltales_found', reading.motivoMejorFoto);
       return {
         status: 'not_recognized',
         pista: safeGeneralMessage(reading.mensajeGeneral) || NOT_RECOGNIZED_MESSAGE,
@@ -270,7 +313,7 @@ export class DiagnosisService {
       return this.needsBetterInput(hadImage, 'low_confidence', reading.motivoMejorFoto);
     }
 
-    const mejorFoto = reading.necesitaMejorFoto ? reading.motivoMejorFoto ?? NEXT_STEP_WITH_IMAGE : null;
+    const mejorFoto = reading.necesitaMejorFoto ? (reading.motivoMejorFoto ?? NEXT_STEP_WITH_IMAGE) : null;
     return this.save(userId, vehicle, summarize(testigos, reading.mensajeGeneral, mejorFoto), {
       telltaleId: null,
       confianza: roundConfidence(Math.max(...testigos.map((item) => item.confianza))),
@@ -290,20 +333,28 @@ export class DiagnosisService {
     const record = await this.diagnoses.find(userId, vehicle.id, id);
     if (!record) throw notFound('No encontramos ese diagnóstico en el historial de este vehículo.');
     const result = resultOf(record, vehicle.fuelType);
-    if (!result) throw notFound('Ese testigo ya no está en el catálogo, así que no podemos mostrar su explicación.', { code: 'TELLTALE_NOT_IN_CATALOG' });
+    if (!result)
+      throw notFound('Ese testigo ya no está en el catálogo, así que no podemos mostrar su explicación.', {
+        code: 'TELLTALE_NOT_IN_CATALOG'
+      });
     return toView(record, result);
   }
 
   async remove(userId: string, plate: string, id: string): Promise<void> {
     const vehicle = await this.findVehicle(userId, plate);
-    if (!(await this.diagnoses.delete(userId, vehicle.id, id))) throw notFound('No encontramos ese diagnóstico en el historial de este vehículo.');
+    if (!(await this.diagnoses.delete(userId, vehicle.id, id)))
+      throw notFound('No encontramos ese diagnóstico en el historial de este vehículo.');
   }
 
   private async save(
     userId: string,
     vehicle: GarageVehicleRecord,
     result: StoredDiagnosisResult,
-    { telltaleId, confianza, description }: { telltaleId: string | null; confianza: number | null; description: string | undefined }
+    {
+      telltaleId,
+      confianza,
+      description
+    }: { telltaleId: string | null; confianza: number | null; description: string | undefined }
   ): Promise<DiagnosedView> {
     const record = await this.diagnoses.create({
       userId,

@@ -41,7 +41,7 @@ const fakeFetch = (status: number, body: unknown) => {
   return { impl, calls };
 };
 
-const scanner = (impl: typeof fetch) => new GeminiCardScanner({ apiKey: GEMINI_KEY, model: 'gemini-3.5-flash', fetchImpl: impl });
+const scanner = (impl: typeof fetch) => new GeminiCardScanner({ apiKey: GEMINI_KEY, model: 'gemini-3.5-flash', fetchImpl: impl, retryDelaysMs: [] });
 
 describe('GeminiCardScanner (fetch simulado)', () => {
   it('envía la imagen en base64 a la Interactions API con x-goog-api-key y pide JSON con esquema', async () => {

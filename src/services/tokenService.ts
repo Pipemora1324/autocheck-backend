@@ -55,6 +55,13 @@ export class TokenService {
     }
   }
 
+  /** Cuándo vence un token ya verificado, en milisegundos desde la época. */
+  accessTokenExpiresAt(token: string): number {
+    const decoded = jwt.decode(token);
+    const exp = typeof decoded === 'object' ? decoded?.exp : undefined;
+    return exp === undefined ? 0 : exp * 1000;
+  }
+
   signRefreshToken(claims: RefreshClaims): string {
     return jwt.sign({ fam: claims.familyId }, this.refreshSecret, {
       algorithm: 'HS256',

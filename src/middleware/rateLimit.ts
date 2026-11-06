@@ -80,7 +80,7 @@ export function createAuthRateLimits(options: RateLimitOptions = {}): AuthRateLi
 
 const HOUR_MS = 60 * 60 * 1000;
 
-export type DiagnosisLimitScope = 'ia' | 'manual' | 'total';
+type DiagnosisLimitScope = 'ia' | 'manual' | 'total';
 
 interface PerUserLimiterOptions {
   /** Campos adicionales del cuerpo del 429. */

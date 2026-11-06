@@ -19,7 +19,7 @@ export const INVALID_CREDENTIALS = 'Credenciales inválidas.';
 export const INVALID_RESET_TOKEN = 'El enlace de recuperación no es válido o ya expiró.';
 export const INVALID_VERIFICATION_TOKEN = 'El enlace de verificación no es válido o ya expiró. Solicita uno nuevo.';
 export const WRONG_PASSWORD_CODE = 'INVALID_PASSWORD';
-export const INVALID_SESSION = 'La sesión no es válida o expiró. Inicia sesión de nuevo.';
+const INVALID_SESSION = 'La sesión no es válida o expiró. Inicia sesión de nuevo.';
 
 /** Usuario tal como se entrega al cliente (el access token solo lleva id, email y rol). */
 export interface PublicUser extends AuthUser {
@@ -49,8 +49,7 @@ export interface AuthServiceDeps {
 }
 
 /** sha256 de un token de un solo uso: en la base nunca se guarda el token en claro. */
-export const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex');
-export const hashOneTimeToken = hashResetToken;
+export const hashOneTimeToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 const newOneTimeToken = () => randomBytes(32).toString('base64url');
 
@@ -156,7 +155,7 @@ export class AuthService {
 
     const token = newOneTimeToken();
     const expiresAt = new Date(this.now().getTime() + RESET_TOKEN_TTL_MS);
-    await this.deps.resetTokens.create(user.id, hashResetToken(token), expiresAt);
+    await this.deps.resetTokens.create(user.id, hashOneTimeToken(token), expiresAt);
 
     const resetUrl = `${this.deps.appUrl}/reset-password?token=${encodeURIComponent(token)}`;
     // Sin await: el tiempo de respuesta no depende del envío del correo.
@@ -167,7 +166,7 @@ export class AuthService {
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
     const now = this.now();
-    const userId = await this.deps.resetTokens.consume(hashResetToken(token), now);
+    const userId = await this.deps.resetTokens.consume(hashOneTimeToken(token), now);
     if (!userId) throw badRequest(INVALID_RESET_TOKEN);
 
     await this.deps.users.updatePassword(userId, await this.deps.hasher.hash(newPassword));

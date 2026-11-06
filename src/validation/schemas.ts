@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-export const emailSchema = z
+const emailSchema = z
   .string({ error: 'El correo es obligatorio.' })
   .trim()
   .toLowerCase()
   .pipe(z.email({ error: 'Ingresa un correo válido.' }).max(254, 'El correo es demasiado largo.'));
 
 // Límite superior para evitar hashear entradas enormes.
-export const newPasswordSchema = z
+const newPasswordSchema = z
   .string({ error: 'La contraseña es obligatoria.' })
   .min(8, 'La contraseña debe tener al menos 8 caracteres.')
   .max(128, 'La contraseña no puede superar 128 caracteres.');

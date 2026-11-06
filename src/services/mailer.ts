@@ -15,7 +15,7 @@ interface EmailContent {
 const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => HTML_ENTITIES[char] ?? char);
 
-export function passwordResetEmail(resetUrl: string): EmailContent {
+function passwordResetEmail(resetUrl: string): EmailContent {
   const subject = 'Restablece tu contraseña de AutoCheck-CO';
   const text = [
     'Hola,',
@@ -48,7 +48,7 @@ export function passwordResetEmail(resetUrl: string): EmailContent {
   return { subject, text, html };
 }
 
-export function emailVerificationEmail(verifyUrl: string): EmailContent {
+function emailVerificationEmail(verifyUrl: string): EmailContent {
   const subject = 'Confirma tu correo en AutoCheck-CO';
   const text = [
     'Hola,',

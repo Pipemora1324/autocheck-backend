@@ -4,7 +4,8 @@ import { after, before, describe, it } from 'node:test';
 import { loadConfig } from '../src/config/env.js';
 import { CardReaderUnavailableError, CardScannerBusyError, CardUnreadableError, type CardImage, type RawCardExtraction } from '../src/services/cardScanner.js';
 import { createCardScanner } from '../src/services/createCardScanner.js';
-import { GEMINI_INTERACTIONS_URL, GEMINI_RESPONSE_SCHEMA, GeminiCardScanner } from '../src/services/geminiCardScanner.js';
+import { GeminiCardScanner, GEMINI_RESPONSE_SCHEMA } from '../src/services/geminiCardScanner.js';
+import { GEMINI_INTERACTIONS_URL } from '../src/services/geminiClient.js';
 import { PRIVACY_POLICY_VERSION, REGISTRATION_CONSENT_TEXT } from '../src/services/privacyPolicy.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 

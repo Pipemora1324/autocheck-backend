@@ -15,8 +15,8 @@ export const CHAT_SAFE_STOP_ANSWER = 'Con este testigo no es seguro seguir manej
 export const CHAT_OFF_TOPIC_ANSWER = 'Solo puedo ayudarte con temas de tu vehículo y de este diagnóstico. ¿Qué quieres saber sobre los testigos?';
 export const CHAT_STOP_REMINDER = 'Recuerda: con este testigo, detente en un lugar seguro y llama a un taller o a una grúa.';
 export const CHAT_RED_REMINDER = 'Recuerda: un testigo rojo indica algo serio. Haz que lo revisen hoy.';
-export const CHAT_BUSY_MESSAGE = 'El servicio gratuito de IA está ocupado. Intenta de nuevo en un minuto.';
-export const CHAT_ERROR_MESSAGE = 'La IA no pudo responder por un problema del servicio. Intenta más tarde.';
+const CHAT_BUSY_MESSAGE = 'El servicio gratuito de IA está ocupado. Intenta de nuevo en un minuto.';
+const CHAT_ERROR_MESSAGE = 'La IA no pudo responder por un problema del servicio. Intenta más tarde.';
 
 const chatOutputSchema = z.object({
   respuesta: z.string().transform((value) => value.trim().slice(0, MAX_ANSWER_LENGTH)),
@@ -26,7 +26,7 @@ const chatOutputSchema = z.object({
 
 export type ChatOutput = z.infer<typeof chatOutputSchema>;
 
-export const CHAT_RESPONSE_SCHEMA = {
+const CHAT_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     respuesta: { type: 'string' },
@@ -36,7 +36,7 @@ export const CHAT_RESPONSE_SCHEMA = {
   required: ['respuesta', 'sugiereSeguirManejando', 'temaAjeno']
 };
 
-export const CHAT_INSTRUCTIONS = `Eres un asistente que conversa con el dueño de un vehículo sobre un diagnóstico de testigos del tablero. Responde en español claro, de forma conversacional y concreta, en pocas frases.
+const CHAT_INSTRUCTIONS = `Eres un asistente que conversa con el dueño de un vehículo sobre un diagnóstico de testigos del tablero. Responde en español claro, de forma conversacional y concreta, en pocas frases.
 
 Reglas:
 - Responde a lo que te preguntan usando los datos del vehículo, los testigos del diagnóstico y la conversación.
@@ -58,7 +58,7 @@ export interface ChatResponder {
   reply(context: ChatContext): Promise<ChatOutput>;
 }
 
-export class ChatProviderBusyError extends Error {}
+class ChatProviderBusyError extends Error {}
 
 export class GeminiChatResponder implements ChatResponder {
   private readonly client: GeminiClient;
@@ -102,7 +102,7 @@ export function createChatResponder(config: AppConfig['scan']): ChatResponder | 
 }
 
 /** Decide qué texto final recibe el usuario. La seguridad se aplica aquí, sin importar lo que diga el modelo. */
-export function finalAnswer(output: ChatOutput, result: StoredDiagnosisResult): string {
+function finalAnswer(output: ChatOutput, result: StoredDiagnosisResult): string {
   const mustStop = result.debeDetenerse;
   const parts: string[] = [];
   if (output.temaAjeno || !output.respuesta) parts.push(CHAT_OFF_TOPIC_ANSWER);

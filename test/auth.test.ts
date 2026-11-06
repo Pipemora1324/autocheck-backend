@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { FORGOT_PASSWORD_MESSAGE } from '../src/controllers/authController.js';
-import { hashResetToken, INVALID_CREDENTIALS, INVALID_RESET_TOKEN, RESET_TOKEN_TTL_MS } from '../src/services/authService.js';
+import { hashOneTimeToken, INVALID_CREDENTIALS, INVALID_RESET_TOKEN, RESET_TOKEN_TTL_MS } from '../src/services/authService.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
 describe('Registro', () => {
@@ -137,7 +137,7 @@ describe('Recuperación de contraseña', () => {
 
     const token = ctx.mailer.lastToken();
     const stored = ctx.resetTokens.tokens.at(-1)!;
-    assert.equal(stored.tokenHash, hashResetToken(token));
+    assert.equal(stored.tokenHash, hashOneTimeToken(token));
     assert.ok(!ctx.resetTokens.tokens.some((row) => row.tokenHash === token));
     assert.equal(stored.expiresAt.getTime() - ctx.clock.now.getTime(), RESET_TOKEN_TTL_MS);
   });

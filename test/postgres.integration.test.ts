@@ -11,7 +11,7 @@ import {
 } from '../src/repositories/pgAuthRepositories.js';
 import { PgDiagnosisRepository } from '../src/repositories/pgDiagnosisRepository.js';
 import { PgGarageRepository } from '../src/repositories/pgGarageRepository.js';
-import { hashResetToken } from '../src/services/authService.js';
+import { hashOneTimeToken } from '../src/services/authService.js';
 import { newUser } from './support/fixtures.js';
 
 // Requiere TEST_DATABASE_URL apuntando a una base desechable: se borra el esquema public antes de migrar.
@@ -46,14 +46,14 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const tokens = new PgPasswordResetTokenRepository(pool);
     const now = new Date();
     const expires = new Date(now.getTime() + 30 * 60_000);
-    await tokens.create(user.id, hashResetToken('token-a'), expires);
-    await tokens.create(user.id, hashResetToken('token-b'), expires);
-    await tokens.create(user.id, hashResetToken('token-expirado'), new Date(now.getTime() - 1000));
+    await tokens.create(user.id, hashOneTimeToken('token-a'), expires);
+    await tokens.create(user.id, hashOneTimeToken('token-b'), expires);
+    await tokens.create(user.id, hashOneTimeToken('token-expirado'), new Date(now.getTime() - 1000));
 
-    assert.equal(await tokens.consume(hashResetToken('token-expirado'), now), null);
-    const results = await Promise.all([tokens.consume(hashResetToken('token-a'), now), tokens.consume(hashResetToken('token-a'), now)]);
+    assert.equal(await tokens.consume(hashOneTimeToken('token-expirado'), now), null);
+    const results = await Promise.all([tokens.consume(hashOneTimeToken('token-a'), now), tokens.consume(hashOneTimeToken('token-a'), now)]);
     assert.deepEqual(results.filter(Boolean), [user.id]);
-    assert.equal(await tokens.consume(hashResetToken('token-b'), now), null);
+    assert.equal(await tokens.consume(hashOneTimeToken('token-b'), now), null);
   });
 
   it('refresh tokens: revocación única y por familia', async () => {
@@ -79,9 +79,9 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
 
     const tokens = new PgEmailVerificationTokenRepository(pool);
     const now = new Date();
-    await tokens.create(user.id, hashResetToken('verif-a'), new Date(now.getTime() + 60_000));
-    assert.equal(await tokens.consume(hashResetToken('verif-a'), now), user.id);
-    assert.equal(await tokens.consume(hashResetToken('verif-a'), now), null);
+    await tokens.create(user.id, hashOneTimeToken('verif-a'), new Date(now.getTime() + 60_000));
+    assert.equal(await tokens.consume(hashOneTimeToken('verif-a'), now), user.id);
+    assert.equal(await tokens.consume(hashOneTimeToken('verif-a'), now), null);
 
     const first = new Date('2026-11-01T10:00:00Z');
     await users.markEmailVerified(user.id, first);
@@ -95,8 +95,8 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.equal(user.termsVersion, 'test');
     const expires = new Date(Date.now() + 60_000);
     await new PgRefreshTokenRepository(pool).create({ id: crypto.randomUUID(), userId: user.id, familyId: crypto.randomUUID() }, expires);
-    await new PgPasswordResetTokenRepository(pool).create(user.id, hashResetToken('borrar-reset'), expires);
-    await new PgEmailVerificationTokenRepository(pool).create(user.id, hashResetToken('borrar-verif'), expires);
+    await new PgPasswordResetTokenRepository(pool).create(user.id, hashOneTimeToken('borrar-reset'), expires);
+    await new PgEmailVerificationTokenRepository(pool).create(user.id, hashOneTimeToken('borrar-verif'), expires);
 
     await users.delete(user.id);
     const { rows } = await pool.query(

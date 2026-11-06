@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { colombianPlateSchema } from './garageSchemas.js';
 
-export const MAX_DESCRIPTION_LENGTH = 500;
-export const MAX_CHAT_MESSAGE_LENGTH = 500;
+const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_CHAT_MESSAGE_LENGTH = 500;
 
 const blankToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
 /** Un formulario multipart solo envía texto. */

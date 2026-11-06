@@ -101,12 +101,12 @@ export interface MailFrom {
   name: string;
 }
 
-export type ScanConfig =
+type ScanConfig =
   | { provider: 'gemini' | 'anthropic'; apiKey: string; model: string }
   /** missingKeyFor: el proveedor pedido en SCAN_PROVIDER cuya clave falta (para avisar al arrancar). */
   | { provider: 'none'; missingKeyFor?: 'gemini' | 'anthropic' };
 
-export type EmailConfig =
+type EmailConfig =
   | { provider: 'brevo'; apiKey: string; from: MailFrom }
   | { provider: 'smtp'; host: string; port: number; user: string; pass: string; from: MailFrom }
   | { provider: 'console' };

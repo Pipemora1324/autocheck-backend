@@ -1,10 +1,9 @@
 export const FUEL_TYPES = ['Gasolina', 'Diésel', 'Eléctrico', 'Híbrido', 'Gas natural', 'Gasolina y gas', 'Otro'] as const;
 export const SERVICE_TYPES = ['Particular', 'Público', 'Oficial', 'Diplomático', 'Otro'] as const;
-export const VEHICLE_SOURCES = ['manual', 'scan'] as const;
 
 export type FuelType = (typeof FUEL_TYPES)[number];
 export type ServiceType = (typeof SERVICE_TYPES)[number];
-export type VehicleSource = (typeof VEHICLE_SOURCES)[number];
+export type VehicleSource = 'manual' | 'scan';
 
 /** Campos que el usuario puede registrar o editar. */
 export interface GarageVehicleData {

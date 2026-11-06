@@ -11,8 +11,6 @@ import {
 } from './cardScanner.js';
 import { GeminiBusyError, GeminiClient, GeminiUnavailableError, GeminiUnusableOutputError, type GeminiClientOptions } from './geminiClient.js';
 
-export { GEMINI_API_REVISION, GEMINI_INTERACTIONS_URL } from './geminiClient.js';
-
 const nullableField = {
   type: 'object',
   properties: { value: { type: ['string', 'null'] }, confidence: { type: 'number', minimum: 0, maximum: 1 } },

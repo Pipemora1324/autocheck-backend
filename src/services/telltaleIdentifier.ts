@@ -66,7 +66,7 @@ export type ModelTelltale = z.infer<typeof telltaleSchema>;
 export type DashboardReading = z.infer<typeof dashboardReadingSchema>;
 
 /** El contexto que recibe el modelo. La placa no se envía. */
-export interface TelltaleVehicleContext {
+interface TelltaleVehicleContext {
   brand: string;
   model: string;
   year: number | null;

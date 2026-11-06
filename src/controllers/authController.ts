@@ -12,7 +12,7 @@ import {
   verifyEmailSchema
 } from '../validation/schemas.js';
 
-export const REFRESH_COOKIE = 'autocheck_refresh';
+const REFRESH_COOKIE = 'autocheck_refresh';
 export const FORGOT_PASSWORD_MESSAGE = 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';
 export const RESEND_VERIFICATION_MESSAGE = 'Si el correo está registrado y aún no se ha confirmado, recibirás un nuevo enlace de verificación.';
 

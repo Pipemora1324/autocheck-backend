@@ -1,6 +1,6 @@
 /**
- * Catálogo de testigos del tablero: la fuente de verdad del diagnóstico. La IA solo elige un id de esta lista;
- * todo lo que lee el usuario sale de aquí.
+ * Catálogo de testigos del tablero, para elegirlos a mano: cuando la IA está apagada, falla o el usuario lo prefiere.
+ * Las respuestas con IA no salen de aquí: las redacta el modelo y las limita el piso de seguridad del servidor.
  *
  * PENDIENTE ANTES DE LA ENTREGA: este contenido debe ser revisado por una persona con conocimiento mecánico.
  * Es orientación general redactada sin datos del fabricante; los símbolos y el comportamiento cambian entre marcas.
@@ -8,14 +8,12 @@
  * Reglas al editarlo (las verifica test/telltales.test.ts):
  * - Los id son estables: el historial guarda el id, así que no se renombran.
  * - neverDrive=true implica severidad 'rojo'. Un rojo sin neverDrive (airbag) exige atención hoy, pero no ordena detenerse.
- * - colores admite excepciones a los colores por defecto de la severidad: los usa la validación cruzada de la foto.
  * - puedesRevisar solo admite comprobaciones seguras que un conductor hace sin herramientas.
  * - Sin cifras inventadas: las presiones y los niveles se remiten al manual o a la etiqueta del vehículo.
  */
 
 export type TelltaleSeverity = 'rojo' | 'amarillo' | 'informativo';
 export type TelltalePowertrain = 'gasolina' | 'diesel' | 'hibrido' | 'electrico';
-export type TelltaleColor = 'rojo' | 'amarillo' | 'verde' | 'azul' | 'blanco';
 
 export interface Telltale {
   id: string;
@@ -23,10 +21,6 @@ export interface Telltale {
   alias: string[];
   descripcionSimbolo: string;
   severidad: TelltaleSeverity;
-  /** Colores con que suele aparecer, si difieren de los de su severidad. El color cambia entre marcas. */
-  colores?: TelltaleColor[];
-  /** true si el símbolo se confunde con el de otro testigo más grave y solo el color los distingue. */
-  exigeColor?: boolean;
   /** true si nunca se debe decir que puede seguir manejando. */
   neverDrive: boolean;
   /** Si existe, un parpadeo confirmado se trata como rojo, sin cambiar la severidad base. */
@@ -104,7 +98,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['bolsa de aire', 'SRS', 'muñeco con bola', 'pretensores'],
     descripcionSimbolo: 'Persona sentada de perfil con un círculo grande delante del pecho, o las letras SRS o AIRBAG.',
     severidad: 'rojo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: false,
     significado: 'El sistema de bolsas de aire detectó una falla. En un choque las bolsas o los pretensores de los cinturones podrían no activarse, o activarse cuando no deben.',
     causasProbables: ['Conector suelto debajo de un asiento', 'Falla en un sensor o en el módulo del sistema', 'Pretensor del cinturón con falla', 'Choque anterior mal reparado'],
@@ -119,7 +112,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['timón', 'volante con admiración', 'dirección hidráulica', 'EPS'],
     descripcionSimbolo: 'Volante con un signo de exclamación al lado, o las letras EPS.',
     severidad: 'rojo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: true,
     significado: 'La asistencia de la dirección falló o puede fallar. El volante se puede poner muy duro de un momento a otro.',
     causasProbables: ['Falla en el sistema eléctrico de la dirección', 'Falta de líquido hidráulico por una fuga', 'Correa o bomba de dirección con falla', 'Voltaje bajo por un problema de batería'],
@@ -148,7 +140,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['caja', 'caja automática', 'AT', 'engranaje', 'temperatura de la caja'],
     descripcionSimbolo: 'Engranaje con un signo de exclamación o un termómetro, o las letras AT u OIL en la zona de la palanca.',
     severidad: 'rojo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: true,
     significado: 'La caja de cambios detectó una falla o se está calentando. Puede dejar de hacer los cambios o entrar a un modo de emergencia.',
     causasProbables: ['Temperatura alta del aceite de la caja', 'Nivel bajo de aceite de la caja por una fuga', 'Falla de un sensor o del control electrónico', 'Desgaste interno'],
@@ -163,7 +154,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['alta tensión', 'carro con admiración', 'sistema híbrido', 'batería de tracción', 'EV'],
     descripcionSimbolo: 'Silueta de carro con un signo de exclamación, o un rayo con el texto de revisar sistema híbrido o eléctrico.',
     severidad: 'rojo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: true,
     significado: 'El sistema de alta tensión que mueve el vehículo tiene una falla. El vehículo puede perder potencia o apagarse.',
     causasProbables: ['Falla en la batería de tracción o en su refrigeración', 'Falla del inversor o del cargador', 'Falla en un sensor del sistema de alta tensión'],
@@ -197,7 +187,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['aceitera amarilla', 'falta aceite', 'OIL LEVEL'],
     descripcionSimbolo: 'Aceitera amarilla, a veces con una línea ondulada debajo o el texto OIL LEVEL.',
     severidad: 'amarillo',
-    exigeColor: true,
     neverDrive: false,
     significado: 'El sensor detecta que el nivel de aceite está por debajo de lo recomendado, aunque todavía no haya un problema de presión.',
     causasProbables: ['Consumo normal de aceite entre cambios', 'Pequeña fuga', 'Mantenimiento de aceite atrasado'],
@@ -240,7 +229,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['freno de parqueo', 'freno de estacionamiento', 'P en círculo', 'PARK'],
     descripcionSimbolo: 'Letra P dentro de un círculo con paréntesis, a veces el mismo signo de exclamación del sistema de frenos.',
     severidad: 'amarillo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: false,
     significado: 'El freno de mano está aplicado. Es normal con el vehículo parqueado, y se debe apagar al liberarlo por completo.',
     causasProbables: ['Freno de mano aplicado o sin liberar del todo', 'Interruptor del freno de mano desajustado', 'Si sigue encendido al liberarlo, nivel bajo de líquido de frenos'],
@@ -255,7 +243,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['EPB', 'freno electrónico', 'P con llave'],
     descripcionSimbolo: 'Letra P en un círculo acompañada de una llave de mecánico o de un signo de exclamación, o las letras EPB.',
     severidad: 'amarillo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: false,
     significado: 'El freno de mano eléctrico tiene una falla. Puede no aplicarse o no liberarse cuando se lo pidas.',
     causasProbables: ['Voltaje bajo de la batería', 'Falla en un motor del freno trasero', 'Interruptor o módulo con falla'],
@@ -298,7 +285,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['agua del radiador', 'depósito de agua', 'coolant', 'anticongelante'],
     descripcionSimbolo: 'Rectángulo con ondas o un termómetro y una línea de nivel, normalmente en amarillo.',
     severidad: 'amarillo',
-    exigeColor: true,
     neverDrive: false,
     significado: 'El nivel de líquido refrigerante está bajo. Si sigue bajando, el motor se puede recalentar.',
     causasProbables: ['Evaporación o consumo lento', 'Fuga en una manguera o en el radiador', 'Tapa del depósito en mal estado', 'Falla del empaque de culata'],
@@ -327,7 +313,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['puerta abierta', 'capó abierto', 'baúl abierto', 'carro con puertas abiertas'],
     descripcionSimbolo: 'Silueta de carro vista desde arriba o de lado, con una puerta, el capó o el baúl abierto.',
     severidad: 'amarillo',
-    colores: ['rojo', 'amarillo', 'blanco'],
     neverDrive: false,
     significado: 'El vehículo detecta que una puerta, el capó o el baúl no está bien cerrado.',
     causasProbables: ['Puerta, capó o baúl mal cerrado', 'Sensor o interruptor de la chapa sucio o dañado'],
@@ -384,7 +369,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['llave', 'carro con candado', 'inmovilizador', 'antirrobo', 'llave no detectada'],
     descripcionSimbolo: 'Llave dentro de la silueta de un carro, o un candado, a veces parpadeando.',
     severidad: 'amarillo',
-    colores: ['rojo', 'amarillo', 'verde'],
     neverDrive: false,
     significado: 'El vehículo no está reconociendo la llave o el sistema antirrobo tiene una falla. Si parpadea con el vehículo apagado y cerrado suele ser normal.',
     causasProbables: ['Batería de la llave agotada', 'Parpadeo normal del antirrobo con el vehículo cerrado', 'Llave dañada o no programada', 'Falla en la antena o en el módulo del inmovilizador'],
@@ -399,7 +383,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['tortuga', 'modo seguro', 'modo de emergencia', 'limp mode'],
     descripcionSimbolo: 'Tortuga, o un signo de exclamación con el texto de potencia reducida.',
     severidad: 'amarillo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: false,
     significado: 'El vehículo limitó su potencia para protegerse de una falla, o en un eléctrico porque queda poca batería o está muy caliente.',
     causasProbables: ['Falla del motor o del acelerador electrónico', 'Filtro de partículas tapado', 'Batería de tracción baja o a temperatura alta', 'Falla de un sensor'],
@@ -428,7 +411,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['precolisión', 'AEB', 'FCW', 'autos chocando', 'asistente de frenado'],
     descripcionSimbolo: 'Dos carros muy juntos con una estrella o un signo de exclamación, o las letras AEB o FCW.',
     severidad: 'amarillo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: false,
     significado: 'El sistema que avisa o frena ante un posible choque no está disponible, por una falla o porque el sensor no ve bien.',
     causasProbables: ['Sensor o cámara sucios, con barro o lluvia fuerte', 'Sistema apagado desde el menú', 'Golpe que desalineó el sensor', 'Falla del sensor o del módulo'],
@@ -488,7 +470,6 @@ export const TELLTALES: readonly Telltale[] = [
     alias: ['cinturón', 'persona con cinturón', 'muñeco con banda'],
     descripcionSimbolo: 'Persona sentada de frente con una banda cruzada sobre el pecho, en rojo o naranja, a veces con pitidos.',
     severidad: 'informativo',
-    colores: ['rojo', 'amarillo'],
     neverDrive: false,
     significado: 'Alguien que va en el vehículo no tiene el cinturón abrochado. No indica una falla mecánica.',
     causasProbables: ['Conductor o pasajero sin abrochar', 'Objeto pesado sobre el asiento del copiloto', 'Hebilla o sensor sucio o dañado'],
@@ -654,15 +635,6 @@ export const TELLTALES: readonly Telltale[] = [
 ];
 
 const BY_ID = new Map(TELLTALES.map((telltale) => [telltale.id, telltale]));
-
-const DEFAULT_COLORS: Record<TelltaleSeverity, readonly TelltaleColor[]> = {
-  rojo: ['rojo'],
-  amarillo: ['amarillo'],
-  informativo: ['verde', 'azul', 'blanco', 'amarillo']
-};
-
-/** Colores compatibles con el testigo, para la validación cruzada de lo que el modelo dice ver. */
-export const coloresDe = (telltale: Telltale): readonly TelltaleColor[] => telltale.colores ?? DEFAULT_COLORS[telltale.severidad];
 
 export function findTelltale(id: string): Telltale | null {
   return BY_ID.get(id) ?? null;

@@ -21,7 +21,7 @@ export { DIAGNOSIS_DISCLAIMER, NEVER_DRIVE_ACTION, SAFETY_SYSTEM_ACTION };
 
 export const DIAGNOSIS_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de diagnóstico con IA está ocupado. Intenta en un minuto o elige el testigo de la lista.';
 export const DIAGNOSIS_PROVIDER_ERROR_MESSAGE = 'El diagnóstico con IA falló por un problema del servicio, no por tu foto. Intenta más tarde o elige el testigo de la lista.';
-export const WHILE_UNIDENTIFIED_WARNING = 'Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.';
+const WHILE_UNIDENTIFIED_WARNING = 'Mientras lo identificas: si el testigo es rojo o notas algo raro al manejar, detente en un lugar seguro.';
 
 /** Por debajo de esto, y sin ningún testigo grave, se pide otra foto en lugar de mostrar una lectura poco fiable. */
 const LOW_CONFIDENCE = 0.3;
@@ -71,7 +71,7 @@ const CATALOG_CATEGORY: Record<string, TelltaleCategory> = {
   direccionales: 'luces'
 };
 
-export type DiagnosisErrorKind = 'provider_error' | 'provider_busy';
+type DiagnosisErrorKind = 'provider_error' | 'provider_busy';
 
 export interface DiagnosedView extends StoredDiagnosisResult {
   status: 'diagnosed';
@@ -93,7 +93,7 @@ export interface NeedsBetterInput {
   puedeElegirDeLaLista: true;
 }
 
-export interface NotRecognized {
+interface NotRecognized {
   status: 'not_recognized';
   pista: string;
   avisoSeguridad: string;
@@ -109,7 +109,7 @@ export interface DiagnosisInput {
   blinking?: boolean;
 }
 
-export interface DiagnosisHistoryItem {
+interface DiagnosisHistoryItem {
   id: string;
   telltaleId: string | null;
   nombre: string | null;
@@ -170,7 +170,7 @@ export function composeFromCatalog(telltale: Telltale, options: { fuelType?: Fue
 }
 
 /** La urgencia general es la del testigo más grave, con la acción de ese testigo. */
-export function summarize(testigos: FinalTelltale[], mensajeGeneral: string, mejorFoto: string | null): StoredDiagnosisResult {
+function summarize(testigos: FinalTelltale[], mensajeGeneral: string, mejorFoto: string | null): StoredDiagnosisResult {
   const urgenciaGeneral = worstUrgency(testigos.map((item) => item.urgencia));
   const debeDetenerse = testigos.some((item) => item.debeDetenerse);
   const principal = testigos.find((item) => item.debeDetenerse) ?? testigos.find((item) => item.urgencia === urgenciaGeneral);

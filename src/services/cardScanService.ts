@@ -13,7 +13,7 @@ import {
 
 export const SCAN_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano.';
 
-export interface Prefilled<T> {
+interface Prefilled<T> {
   value: T | null;
   confidence: number;
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
-import { coloresDe, findTelltale, TELLTALES } from '../src/data/telltales.js';
+import { findTelltale, TELLTALES } from '../src/data/telltales.js';
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
@@ -67,16 +67,10 @@ describe('Catálogo de testigos', () => {
     assert.equal(findTelltale('asistente_carril')!.severidad, 'informativo');
   });
 
-  it('los colores admitidos incluyen el de la severidad y solo check engine cambia al parpadear', () => {
-    const severityColor = { rojo: 'rojo', amarillo: 'amarillo' } as const;
-    for (const item of TELLTALES) {
-      if (item.severidad === 'informativo') continue;
-      assert.ok(coloresDe(item).includes(severityColor[item.severidad]), item.id);
-    }
+  it('solo check engine cambia al parpadear', () => {
     assert.deepEqual(TELLTALES.filter((item) => item.siParpadea).map((item) => item.id), ['check_engine']);
     assert.equal(findTelltale('check_engine')!.severidad, 'amarillo');
     assert.match(findTelltale('check_engine')!.siParpadea!.cuandoIrAlMecanico, /si se ignora/i);
-    assert.deepEqual(TELLTALES.filter((item) => item.exigeColor).map((item) => item.id).sort(), ['nivel_aceite_bajo', 'nivel_refrigerante']);
   });
 
   it('cada testigo tiene todo su contenido', () => {

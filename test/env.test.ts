@@ -122,6 +122,16 @@ describe('loadConfig', () => {
     );
   });
 
+  it('REDIS_URL: es opcional y solo acepta redis:// o rediss://', () => {
+    assert.equal(loadConfig(valid).redisUrl, null);
+    assert.equal(loadConfig({ ...valid, REDIS_URL: '' }).redisUrl, null);
+    assert.equal(
+      loadConfig({ ...valid, REDIS_URL: 'rediss://usuario:clave@redis.example.com:6380' }).redisUrl,
+      'rediss://usuario:clave@redis.example.com:6380'
+    );
+    assert.throws(() => loadConfig({ ...valid, REDIS_URL: 'http://redis.example.com' }), /REDIS_URL/);
+  });
+
   it('ADMIN_EMAILS: lista normalizada y validada', () => {
     assert.deepEqual(loadConfig({ ...valid, ADMIN_EMAILS: ' Ana@Example.com, ,luis@example.com ' }).adminEmails, [
       'ana@example.com',

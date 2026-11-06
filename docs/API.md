@@ -51,7 +51,7 @@ Validación (400):
 
 ## Salud y configuración pública
 
-`GET /health` (público): `{ "status": "ok", "service": "AutoCheck-CO" }`.
+`GET /health` (público): `{ "status": "ok", "service": "AutoCheck-CO", "redis": "disabled" }`. `redis` puede ser `disabled` (sin `REDIS_URL`), `ok` o `degraded` (se está usando el respaldo en memoria). Un Redis caído nunca convierte esto en un error.
 
 `GET /config/public` (público, sin token). Úsalo para mostrar el consentimiento del registro y los avisos antes de subir la foto de la tarjeta o del tablero:
 
@@ -470,6 +470,48 @@ El modelo recibe el vehículo (marca, línea, año, combustible y kilometraje, n
 - **Siempre** se añade "Orientación general. Un mecánico debe confirmar el diagnóstico."
 
 **Errores:** `400` si el mensaje no es válido. `404` si el diagnóstico o la placa no son tuyos. `429 CHAT_LIMIT_REACHED` al llegar a 20 mensajes del usuario en el diagnóstico. `429 RATE_LIMITED` al superar 40 por hora. `503 CHAT_PROVIDER_BUSY` (`provider_busy`), `503 CHAT_UNAVAILABLE` o `503 AI_NOT_CONFIGURED` (`provider_error`). Si falla, no se guarda nada.
+
+---
+
+## Tiempo real (Socket.IO)
+
+Es un extra: **todo funciona por HTTP si el socket no conecta**. Solo va del servidor a los clientes: el cliente no envía eventos.
+
+- **URL:** la del backend, sin `/api`. Vercel no reenvía WebSockets, así que el frontend conecta directo a Render (`environment.wsUrl`).
+- **Autenticación:** `io(url, { auth: { token: accessToken } })`. No usa cookies.
+- **Origen:** solo los de `CORS_ORIGIN`, comprobado también para WebSocket.
+- **Límite:** 5 conexiones por usuario. Al pasarlo se cierra **la más antigua**, porque las páginas recargadas dejan sockets que siguen contando hasta que el servidor nota que murieron. Mensajes de hasta 16 KB.
+- **Sala:** cada usuario solo recibe sus propios eventos (`user:<id>`).
+
+**Errores del handshake** (`connect_error`, en `error.message` y `error.data.code`):
+
+| Código | Cuándo | Qué hacer |
+| --- | --- | --- |
+| `UNAUTHORIZED` | Sin token, inválido o vencido, o la cuenta ya no existe | Renovar con `POST /auth/refresh` y reconectar, una vez |
+| `EMAIL_NOT_VERIFIED` | El correo no está confirmado | No reintentar hasta confirmarlo |
+| `UNAVAILABLE` | El servidor no pudo comprobar al usuario | Reintentar más tarde |
+
+**Eventos del servidor:**
+
+| Evento | Payload | Cuándo |
+| --- | --- | --- |
+| `garage:changed` | `{ action: "created" \| "updated" \| "deleted", plate }` | Se escribió en el garaje |
+| `diagnosis:changed` | `{ action: "created" \| "deleted", plate, id }` | Se creó o borró un diagnóstico |
+| `diagnosis:progress` | `{ requestId, stage, result?, status? }` | Etapas de un diagnóstico con IA |
+| `chat:message` | `{ diagnosisId, question, answer, restantes }` | Se guardó una respuesta del chat |
+| `session:expired` | `{}` | Venció el access token. Después el servidor cierra el socket: hay que renovar y reconectar |
+
+**Progreso del diagnóstico.** Para recibirlo, envía en `POST /garage/:plate/diagnoses` la cabecera `X-Diagnosis-Request` con un UUID generado por el cliente. Sin ella, o si no es un UUID, no se emite progreso y la respuesta HTTP llega igual.
+
+| `stage` | Significado |
+| --- | --- |
+| `queued` | Se aceptó la solicitud |
+| `analyzing` | La imagen se envió al modelo |
+| `drafting` | El modelo respondió, y el servidor aplica el piso de seguridad y guarda |
+| `done` | Terminó. `result` es la misma respuesta de HTTP, **ya validada** |
+| `failed` | Falló el proveedor. `status` es `provider_busy` o `provider_error` |
+
+**Seguridad.** Nunca se transmiten fragmentos crudos del modelo, porque la validación necesita el texto completo: `chat:message` y `done` llevan la respuesta final, después del piso de seguridad. Una misma respuesta puede llegar por HTTP y por el socket: usa el `id` de cada mensaje para no duplicarla.
 
 ---
 

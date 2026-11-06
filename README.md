@@ -1,5 +1,7 @@
 # AutoCheck-CO Backend
 
+[![CI](https://github.com/Pipemora1324/autocheck-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/Pipemora1324/autocheck-backend/actions/workflows/ci.yml)
+
 API REST en Express 5 + TypeScript para AutoCheck-CO: un garaje personal con **diagnóstico de testigos del tablero con IA**. El usuario registra sus vehículos, fotografía un testigo encendido (o lo describe o lo elige de una lista) y la app le explica qué es, qué tan urgente es, qué puede revisar con seguridad y cuándo ir al mecánico, con el motivo concreto. Usa Postgres (Neon) y autenticación propia con JWT.
 
 ## Qué es real, qué es IA y qué queda como trabajo futuro
@@ -15,6 +17,8 @@ API REST en Express 5 + TypeScript para AutoCheck-CO: un garaje personal con **d
 | Diagnóstico con elección manual (`telltaleId`) | **Real**, sin IA y sin enviar nada a terceros. Funciona aunque la IA esté apagada |
 | Historial de diagnósticos | **Real**, en Postgres, sin la imagen. Guarda los testigos con su explicación, para releerla sin llamar a la IA |
 | Lectura de la tarjeta de propiedad (`POST /garage/scan-card`) | Opcional para registrar el vehículo. **Real**, con un **proveedor externo** intercambiable (`SCAN_PROVIDER`): Gemini (plan gratuito, recomendado) o Anthropic. Apagada con `none` o sin la clave del proveedor |
+| Tiempo real (Socket.IO) | **Real**, opcional para el usuario: progreso del diagnóstico, respuesta del chat ya validada y sincronización entre pestañas. Si no conecta, todo sigue por HTTP |
+| Caché y límites con Redis (`REDIS_URL`) | **Real y opcional**, con un **proveedor externo**. Sin Redis funcionan en memoria |
 | Correo (verificación y recuperación) | **Proveedor externo**: Brevo por HTTPS en producción (Render gratuito bloquea SMTP). En desarrollo los enlaces salen por consola |
 
 **El diagnóstico es orientación general:** no reemplaza a un mecánico y no lee los códigos de falla del vehículo. Cada respuesta lo dice.
@@ -27,6 +31,60 @@ API REST en Express 5 + TypeScript para AutoCheck-CO: un garaje personal con **d
 
 - Consultar el RUNT con un proveedor autorizado. Se retiró porque la información es confidencial y de pago; ni el código ni los datos asociados siguen en este repositorio.
 - Medir la precisión del reconocimiento con un conjunto amplio de fotos reales, revisado por un mecánico.
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+  B["Navegador<br/>Angular 21"]
+  V["Vercel<br/>archivos y rewrite /api"]
+  R["Render<br/>Express + Socket.IO"]
+  N[("Neon<br/>Postgres")]
+  G["Google Gemini<br/>visión y chat"]
+  E["Brevo<br/>correo"]
+  X[("Redis<br/>opcional")]
+
+  B -- "HTTP: /api/*" --> V
+  V -- "reenvía" --> R
+  B -. "WebSocket directo<br/>con access token" .-> R
+  R --> N
+  R -- "foto y texto, sin placa" --> G
+  R --> E
+  R -. "caché, límites y adaptador<br/>con respaldo en memoria" .-> X
+```
+
+- **HTTP es la vía principal.** El diagnóstico y el chat funcionan completos aunque el socket nunca conecte.
+- **El socket va directo a Render**, porque Vercel no reenvía WebSockets. Se autentica con el access token, no con cookies.
+- **El piso de seguridad está en el servidor:** lo que llega por HTTP o por el socket ya pasó por él.
+- **Capas:** `routes` → `controllers` → `services` → `repositories`, con las dependencias inyectadas por constructor para poder probarlas. La configuración se valida en un solo módulo (`src/config/env.ts`).
+
+### Redis opcional
+
+Sin `REDIS_URL`, o si Redis falla, todo sigue funcionando en memoria y `GET /health` responde 200: solo su campo `redis` cambia.
+
+| Uso | Clave | Vida |
+| --- | --- | --- |
+| Catálogo de testigos | `v1:catalog:telltales` | 5 min |
+| Garaje de un usuario | `v1:user:<id>:garage` | 60 s, y se invalida al escribir |
+| Historial de un vehículo | `v1:user:<id>:vehicle:<id>:history:<página>:<límite>` | 60 s, y se invalida al escribir |
+| Límites de intentos | `v1:rl:<nombre>:<sha256>` | La ventana del límite |
+| Adaptador de Socket.IO | Canales de Pub/Sub | No guarda datos |
+
+Las claves solo llevan ids o hashes: nunca correos, placas ni textos. En Redis no entran imágenes ni el contenido del chat. Borrar la cuenta borra todas las claves del usuario. Si Redis se cae y vuelve, una lista puede quedar vieja hasta que venza su TTL, que por eso es corto.
+
+## Calidad
+
+```bash
+npm run lint           # ESLint estricto con información de tipos
+npm run lint:fix
+npm run format:check   # Prettier
+npm run typecheck
+npm run test:coverage  # pruebas con cobertura (coverage/)
+```
+
+El CI corre todo esto en cada push y en cada PR hacia `main`, con Postgres y Redis reales en contenedores, Gemini siempre simulado y **ningún secreto**.
+
+**Idioma por capa:** el código (variables, funciones, clases) va en inglés. Los campos del contrato con el frontend (`urgenciaGeneral`, `testigos`) y todo lo que lee una persona (mensajes, comentarios, commits, documentación) van en español.
 
 ## Requisitos
 
@@ -56,10 +114,13 @@ Las variables se validan al arrancar con zod; si falta o es inválida alguna, el
 | `npm run migrate:down` | Revierte la última migración                          |
 | `npm run migrate:prod` | Migraciones desde `dist/` (lo usa Render al arrancar) |
 | `npm test`             | Pruebas con el test runner de Node                    |
+| `npm run test:coverage` | Pruebas con cobertura                                |
+| `npm run lint` / `lint:fix` | ESLint estricto                                  |
+| `npm run format` / `format:check` | Prettier                                   |
 | `npm run eval:telltales` | Lee tus fotos con Gemini real y muestra los testigos |
 | `npm run smoke:gemini` | Lista los modelos de tu clave y prueba cuáles responden |
 
-Las pruebas usan repositorios en memoria, y Gemini simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida.
+Las pruebas usan repositorios en memoria, y Gemini simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida. Con `TEST_REDIS_URL` corren además las de Redis real; sin ella, solo las de Redis caído, que usan un puerto cerrado.
 
 ## Evaluar el reconocimiento con fotos reales
 

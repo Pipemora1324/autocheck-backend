@@ -113,15 +113,36 @@ describe('Socket.IO', () => {
       await connected(own);
     });
 
-    it(`limita a ${MAX_CONNECTIONS_PER_USER} conexiones por usuario, sin afectar a otro`, async () => {
-      for (let index = 0; index < MAX_CONNECTIONS_PER_USER; index++) await connected(client(ana));
-      assert.equal((await rejected(client(ana))).data?.code, 'TOO_MANY_CONNECTIONS');
-      await connected(client(luis));
+    it(`limita a ${MAX_CONNECTIONS_PER_USER} conexiones por usuario: la nueva entra y sale la más antigua`, async () => {
+      const sockets: Socket[] = [];
+      for (let index = 0; index < MAX_CONNECTIONS_PER_USER; index++) {
+        const socket = client(ana);
+        await connected(socket);
+        sockets.push(socket);
+      }
+      const other = client(luis);
+      await connected(other);
 
-      // Al cerrar una, vuelve a haber cupo.
-      open[0].disconnect();
+      const oldestClosed = nextEvent<string>(sockets[0], 'disconnect');
+      const newest = client(ana);
+      await connected(newest);
+      assert.equal(await oldestClosed, 'io server disconnect');
       await settle();
-      await connected(client(ana));
+
+      assert.equal(newest.connected, true, 'quien está usando la app no se queda sin conexión');
+      assert.equal(
+        sockets.slice(1).every((socket) => socket.connected),
+        true
+      );
+      assert.equal(other.connected, true, 'no afecta a otro usuario');
+    });
+
+    it('recargar muchas veces seguidas nunca deja sin conexión, aunque las viejas sigan contando', async () => {
+      const abandoned = Array.from({ length: MAX_CONNECTIONS_PER_USER * 2 }, () => client(ana));
+      for (const socket of abandoned) await connected(socket);
+      await settle();
+      assert.equal(abandoned.at(-1)!.connected, true);
+      assert.equal(abandoned.filter((socket) => socket.connected).length, MAX_CONNECTIONS_PER_USER);
     });
   });
 

@@ -24,7 +24,7 @@ export interface RealtimeEvents {
   'session:expired': Record<string, never>;
 }
 
-export type RealtimeError = 'UNAUTHORIZED' | 'EMAIL_NOT_VERIFIED' | 'TOO_MANY_CONNECTIONS' | 'UNAVAILABLE';
+export type RealtimeError = 'UNAUTHORIZED' | 'EMAIL_NOT_VERIFIED' | 'UNAVAILABLE';
 
 export interface RealtimeNotifier {
   emit<E extends keyof RealtimeEvents>(userId: string, event: E, payload: RealtimeEvents[E]): void;
@@ -67,7 +67,8 @@ export interface SocketHubDeps {
 /** Socket.IO sobre el mismo servidor HTTP. Solo del servidor a los clientes, en una sala por usuario. */
 export class SocketHub implements RealtimeNotifier {
   private io: SocketServer | null = null;
-  private readonly connections = new Map<string, number>();
+  /** Por usuario, de la más antigua a la más reciente. */
+  private readonly connections = new Map<string, Socket[]>();
 
   constructor(private readonly deps: SocketHubDeps) {}
 
@@ -138,7 +139,6 @@ export class SocketHub implements RealtimeNotifier {
     });
     if (!record) throw rejection('UNAUTHORIZED');
     if (!record.emailVerifiedAt) throw rejection('EMAIL_NOT_VERIFIED');
-    if ((this.connections.get(user.id) ?? 0) >= MAX_CONNECTIONS_PER_USER) throw rejection('TOO_MANY_CONNECTIONS');
 
     (socket.data as SocketData).userId = user.id;
     (socket.data as SocketData).expiresAt = this.deps.tokens.accessTokenExpiresAt(token);
@@ -147,7 +147,7 @@ export class SocketHub implements RealtimeNotifier {
   private onConnection(socket: Socket): void {
     const { userId, expiresAt } = socket.data as SocketData;
     void socket.join(roomFor(userId));
-    this.connections.set(userId, (this.connections.get(userId) ?? 0) + 1);
+    this.track(userId, socket);
 
     const now = this.deps.now?.() ?? Date.now();
     const expiry = setTimeout(
@@ -161,10 +161,21 @@ export class SocketHub implements RealtimeNotifier {
 
     socket.once('disconnect', () => {
       clearTimeout(expiry);
-      const remaining = (this.connections.get(userId) ?? 1) - 1;
-      if (remaining > 0) this.connections.set(userId, remaining);
+      const remaining = (this.connections.get(userId) ?? []).filter((item) => item !== socket);
+      if (remaining.length > 0) this.connections.set(userId, remaining);
       else this.connections.delete(userId);
     });
+  }
+
+  /**
+   * Al pasar del límite se cierra la conexión más antigua, no la nueva. Una página recién recargada deja su
+   * socket contando hasta que el servidor nota que murió: rechazar la nueva dejaría sin conexión a quien
+   * está usando la app, por culpa de conexiones que ya no existen.
+   */
+  private track(userId: string, socket: Socket): void {
+    const sockets = [...(this.connections.get(userId) ?? []), socket];
+    this.connections.set(userId, sockets);
+    if (sockets.length > MAX_CONNECTIONS_PER_USER) sockets[0]?.disconnect(true);
   }
 }
 

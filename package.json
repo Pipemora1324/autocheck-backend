@@ -13,7 +13,8 @@
     "migrate:prod": "node dist/db/migrate.js up",
     "prebuild": "node -e \"require(\\\"node:fs\\\").rmSync(\\\"dist\\\",{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
-    "eval:telltales": "tsx --env-file-if-exists=.env scripts/evalTelltales.ts"
+    "eval:telltales": "tsx --env-file-if-exists=.env scripts/evalTelltales.ts",
+    "smoke:gemini": "tsx --env-file-if-exists=.env scripts/smokeGemini.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",

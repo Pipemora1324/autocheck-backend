@@ -14,7 +14,7 @@ import { OBSERVED_COLORS, TelltaleIdentifierBusyError, type TelltaleIdentifier }
 const EVAL_DIR = 'eval-images';
 const DEFAULT_DELAY_MS = 7_000;
 const BUSY_WAIT_MS = 60_000;
-const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+const DEFAULT_MODEL = 'gemini-3.5-flash';
 /** En expected.csv, la imagen no permite identificar el testigo: lo correcto es pedir otra entrada. */
 const EXPECT_NONE = 'ninguno';
 const ASKS_BETTER_INPUT = 'pide mejor entrada';

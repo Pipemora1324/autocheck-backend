@@ -43,7 +43,7 @@ const envSchema = z
       z.enum(['gemini', 'anthropic', 'none'], { error: 'Debe ser gemini, anthropic o none' }).default('none')
     ),
     GEMINI_API_KEY: optionalString,
-    GEMINI_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('gemini-3.5-flash-lite')),
+    GEMINI_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('gemini-3.5-flash')),
     ANTHROPIC_API_KEY: optionalString,
     ANTHROPIC_MODEL: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).default('claude-sonnet-5-5'))
   })

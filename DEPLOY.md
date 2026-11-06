@@ -74,7 +74,7 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
    | `COOKIE_SAMESITE` | `strict` | `strict` |
    | `TRUST_PROXY` | `2` | `1` |
    | `SCAN_PROVIDER` | `gemini` | `none` |
-   | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` |
+   | `GEMINI_MODEL` | `gemini-3.5-flash` | `gemini-3.5-flash` |
 
    **Opcionales** (pueden quedar vacías; el servicio arranca igual):
 
@@ -171,7 +171,7 @@ El diagnóstico de testigos reutiliza `SCAN_PROVIDER`, `GEMINI_API_KEY` y `GEMIN
 
 | `SCAN_PROVIDER` | Proveedor | Variables |
 | --- | --- | --- |
-| `gemini` (recomendado, gratis) | Gemini API de Google AI Studio | `GEMINI_API_KEY`, `GEMINI_MODEL` (por defecto `gemini-3.5-flash-lite`) |
+| `gemini` (recomendado, gratis) | Gemini API de Google AI Studio | `GEMINI_API_KEY`, `GEMINI_MODEL` (por defecto `gemini-3.5-flash`) |
 | `anthropic` | API de Claude (de pago) | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` (por defecto `claude-sonnet-5-5`) |
 | `none` | Apagado | — |
 
@@ -183,7 +183,7 @@ El diagnóstico de testigos reutiliza `SCAN_PROVIDER`, `GEMINI_API_KEY` y `GEMIN
 Detalles del proveedor:
 
 - **Contrato:** Interactions API (`POST https://generativelanguage.googleapis.com/v1beta/interactions`, cabecera `x-goog-api-key`), imagen en base64 y respuesta JSON con esquema. Tomado de la documentación oficial de Google AI Studio el 2026-11-02.
-- **Modelo:** `gemini-3.5-flash-lite` está en el plan gratuito y su página de precios lista entrada de imágenes. Si la lectura es mala, puedes subir a otro modelo con `GEMINI_MODEL` (por ejemplo `gemini-3.8-flash`); revisa antes en la página de precios que acepte imágenes en tu plan.
+- **Modelo:** `gemini-3.5-flash` respondió 200 con imagen en una clave del plan gratuito (2026-11-05). Los modelos disponibles cambian: `npm run smoke:gemini` lista y prueba los de tu clave.
 - **Privacidad:** en el plan gratuito, Google puede usar lo enviado para mejorar sus productos. Esto está declarado en el consentimiento del registro, en `cardScan.notice` y en `diagnosis.notice`.
 - **Saturación:** si el plan gratuito se satura (HTTP 429), la API responde `503 SCAN_PROVIDER_BUSY`: "El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano." En el diagnóstico responde `503 DIAGNOSIS_PROVIDER_BUSY` y sugiere elegir el testigo de la lista.
 

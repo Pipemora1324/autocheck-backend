@@ -83,7 +83,7 @@ describe('loadConfig', () => {
     assert.throws(() => loadConfig({ ...valid, ADMIN_EMAILS: 'ana@example.com, no-es-correo' }), /ADMIN_EMAILS: Correo inválido "no-es-correo"/);
   });
 
-  it('modelos de lectura: claude-sonnet-5-5 y gemini-3.5-flash-lite por defecto, y configurables', () => {
+  it('modelos de lectura: claude-sonnet-5-5 y gemini-3.5-flash por defecto, y configurables', () => {
     const key = randomBytes(8).toString('hex');
     const model = (env: Record<string, string>) => {
       const { scan } = loadConfig({ ...valid, ...env });
@@ -91,7 +91,7 @@ describe('loadConfig', () => {
     };
     assert.equal(model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key }), 'claude-sonnet-5-5');
     assert.equal(model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key, ANTHROPIC_MODEL: 'claude-opus-5-5' }), 'claude-opus-5-5');
-    assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key }), 'gemini-3.5-flash-lite');
+    assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key }), 'gemini-3.5-flash');
     assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key, GEMINI_MODEL: 'gemini-3.8-flash' }), 'gemini-3.8-flash');
   });
 

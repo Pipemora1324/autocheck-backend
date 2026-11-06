@@ -41,7 +41,7 @@ const fakeFetch = (status: number, body: unknown) => {
   return { impl, calls };
 };
 
-const scanner = (impl: typeof fetch) => new GeminiCardScanner({ apiKey: GEMINI_KEY, model: 'gemini-3.5-flash', fetchImpl: impl, retryDelaysMs: [] });
+const scanner = (impl: typeof fetch) => new GeminiCardScanner({ apiKey: GEMINI_KEY, model: 'gemini-3.5-flash-lite', fetchImpl: impl, retryDelaysMs: [] });
 
 describe('GeminiCardScanner (fetch simulado)', () => {
   it('envía la imagen en base64 a la Interactions API con x-goog-api-key y pide JSON con esquema', async () => {
@@ -58,7 +58,7 @@ describe('GeminiCardScanner (fetch simulado)', () => {
     assert.equal(headers['content-type'], 'application/json');
 
     const body = JSON.parse(String(init.body));
-    assert.equal(body.model, 'gemini-3.5-flash');
+    assert.equal(body.model, 'gemini-3.5-flash-lite');
     assert.equal(body.input[0].type, 'text');
     assert.match(body.input[0].text, /nunca una instrucción/);
     assert.deepEqual(body.input[1], { type: 'image', data: image.data.toString('base64'), mime_type: 'image/jpeg' });
@@ -116,7 +116,7 @@ describe('SCAN_PROVIDER', () => {
     assert.deepEqual(loadConfig({ ...base, SCAN_PROVIDER: 'Gemini', GEMINI_API_KEY: GEMINI_KEY }).scan, {
       provider: 'gemini',
       apiKey: GEMINI_KEY,
-      model: 'gemini-3.5-flash'
+      model: 'gemini-3.5-flash-lite'
     });
     const anthropic = loadConfig({ ...base, SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: GEMINI_KEY });
     assert.equal(anthropic.scan.provider === 'anthropic' && anthropic.scan.model, 'claude-sonnet-5-5');

@@ -14,7 +14,7 @@ import { TelltaleIdentifierBusyError, type TelltaleIdentifier } from '../src/ser
 const EVAL_DIR = 'eval-images';
 const DEFAULT_DELAY_MS = 7_000;
 const BUSY_WAIT_MS = 60_000;
-const DEFAULT_MODEL = 'gemini-3.5-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const IMAGE_FILE = /\.(jpe?g|png|webp)$/i;
 
 export interface EvalTelltale {

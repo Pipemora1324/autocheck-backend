@@ -45,11 +45,9 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
   // Errores de body-parser (JSON mal formado, cuerpo demasiado grande).
   const status = (error as { status?: number }).status;
   if (status === 400 || status === 413) {
-    response
-      .status(status)
-      .json({
-        message: status === 413 ? 'La solicitud es demasiado grande.' : 'El cuerpo de la solicitud no es JSON válido.'
-      });
+    response.status(status).json({
+      message: status === 413 ? 'La solicitud es demasiado grande.' : 'El cuerpo de la solicitud no es JSON válido.'
+    });
     return;
   }
 

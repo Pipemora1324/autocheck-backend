@@ -52,7 +52,7 @@ export class PgUserRepository implements UserRepository {
         'INSERT INTO users (email, password_hash, terms_accepted_at, terms_version) VALUES ($1, $2, $3, $4) RETURNING *',
         [user.email, user.passwordHash, user.termsAcceptedAt, user.termsVersion]
       );
-      return toUser(rows[0]!);
+      return toUser(rows[0]);
     } catch (error) {
       if ((error as { code?: string }).code === UNIQUE_VIOLATION) return null;
       throw error;
@@ -136,8 +136,7 @@ export class PgRefreshTokenRepository implements RefreshTokenRepository {
        RETURNING id, user_id, family_id`,
       [id, now]
     );
-    const row = rows[0];
-    return row ? { id: row.id, userId: row.user_id, familyId: row.family_id } : null;
+    return rows[0] ? { id: rows[0].id, userId: rows[0].user_id, familyId: rows[0].family_id } : null;
   }
 
   async revokeFamily(familyId: string, now: Date): Promise<void> {

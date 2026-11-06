@@ -7,7 +7,7 @@ const PLATE_IN_PATH = /^((?:\/api)?\/garage\/)(?!(?:scan-card|capabilities)(?:\/
 
 /** Quita de la URL lo que no debe llegar a los logs: la placa y la cadena de consulta. */
 export function sanitizeUrlForLog(url: string): string {
-  return url.split('?')[0]!.replace(PLATE_IN_PATH, '$1:plate');
+  return url.split('?')[0].replace(PLATE_IN_PATH, '$1:plate');
 }
 
 morgan.token('safe-url', (request: IncomingMessage & { originalUrl?: string }) => sanitizeUrlForLog(request.originalUrl ?? request.url ?? ''));

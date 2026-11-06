@@ -1,0 +1,16 @@
+{
+  "all": true,
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/types/**",
+    "src/server.ts"
+  ],
+  "reporter": [
+    "text-summary",
+    "text",
+    "lcov"
+  ],
+  "report-dir": "coverage"
+}

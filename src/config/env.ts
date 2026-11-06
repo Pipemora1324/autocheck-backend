@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const optionalString = z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().optional());
 const isEmail = (value: string) => z.email().safeParse(value).success;
+const lowercaseOrUndefined = (value: unknown) => (typeof value === 'string' && value !== '' ? value.toLowerCase() : undefined);
 
 const envSchema = z
   .object({
@@ -14,7 +15,7 @@ const envSchema = z
     APP_URL: z.preprocess((value) => (value === '' ? undefined : value), z.url().optional()),
     // Correo: brevo (API HTTPS; Render gratuito bloquea los puertos SMTP), smtp o console (solo desarrollo).
     EMAIL_PROVIDER: z.preprocess(
-      (value) => (value === '' || value === undefined ? undefined : String(value).toLowerCase()),
+      lowercaseOrUndefined,
       z.enum(['brevo', 'smtp', 'console'], { error: 'Debe ser brevo, smtp o console' }).optional()
     ),
     BREVO_API_KEY: optionalString,
@@ -31,7 +32,7 @@ const envSchema = z
       z.string().regex(/^\/[\w\-/]*$/, 'Debe ser una ruta que empiece por /, por ejemplo /api/auth').default('/auth')
     ),
     COOKIE_SAMESITE: z.preprocess(
-      (value) => (value === '' || value === undefined ? undefined : String(value).toLowerCase()),
+      lowercaseOrUndefined,
       z.enum(['strict', 'lax', 'none'], { error: 'Debe ser strict, lax o none' }).optional()
     ),
     // Cantidad de proxies delante de Express (ver DEPLOY.md, "Proxies y rate limit").
@@ -39,7 +40,7 @@ const envSchema = z
     // Lectura de la tarjeta de propiedad con visión: gemini (plan gratuito), anthropic o none.
     // Sin proveedor o sin su clave, POST /garage/scan-card responde 503.
     SCAN_PROVIDER: z.preprocess(
-      (value) => (value === '' || value === undefined ? undefined : String(value).toLowerCase()),
+      lowercaseOrUndefined,
       z.enum(['gemini', 'anthropic', 'none'], { error: 'Debe ser gemini, anthropic o none' }).default('none')
     ),
     GEMINI_API_KEY: optionalString,
@@ -177,10 +178,23 @@ function toScanConfig(env: z.infer<typeof envSchema>): ScanConfig {
   return { provider: 'none' };
 }
 
+function validated(value: string | undefined, name: string): string {
+  if (!value) throw new EnvValidationError(`Falta ${name}.`);
+  return value;
+}
+
 function toEmailConfig(env: z.infer<typeof envSchema>): EmailConfig {
   const provider = emailProvider(env);
-  const from = { email: env.MAIL_FROM!, name: env.MAIL_FROM_NAME };
-  if (provider === 'brevo') return { provider, apiKey: env.BREVO_API_KEY!, from };
-  if (provider === 'smtp') return { provider, host: env.SMTP_HOST!, port: env.SMTP_PORT, user: env.SMTP_USER!, pass: env.SMTP_PASS!, from };
-  return { provider: 'console' };
+  if (provider === 'console') return { provider };
+  // superRefine ya exigió estas variables: fallar aquí indicaría un error de programación.
+  const from = { email: validated(env.MAIL_FROM, 'MAIL_FROM'), name: env.MAIL_FROM_NAME };
+  if (provider === 'brevo') return { provider, apiKey: validated(env.BREVO_API_KEY, 'BREVO_API_KEY'), from };
+  return {
+    provider,
+    host: validated(env.SMTP_HOST, 'SMTP_HOST'),
+    port: env.SMTP_PORT,
+    user: validated(env.SMTP_USER, 'SMTP_USER'),
+    pass: validated(env.SMTP_PASS, 'SMTP_PASS'),
+    from
+  };
 }

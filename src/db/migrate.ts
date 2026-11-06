@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { errorMessage } from '../errors/httpError.js';
 import { runner } from 'node-pg-migrate';
 import { z } from 'zod';
 import { connectionOptions } from './pool.js';
@@ -14,7 +15,7 @@ export async function runMigrations(databaseUrl: string, direction: 'up' | 'down
     count: count ?? (direction === 'up' ? Infinity : 1),
     migrationsTable: 'pgmigrations',
     checkOrder: true,
-    log: (message) => console.log(message)
+    log: (message) => { console.log(message); }
   });
 }
 
@@ -28,9 +29,9 @@ if (isEntryPoint) {
   }
   const direction = process.argv[2] === 'down' ? 'down' : 'up';
   runMigrations(databaseUrl.data, direction)
-    .then(() => console.log(`Migraciones (${direction}) aplicadas.`))
-    .catch((error: Error) => {
-      console.error('Error al ejecutar migraciones:', error.message);
+    .then(() => { console.log(`Migraciones (${direction}) aplicadas.`); })
+    .catch((error: unknown) => {
+      console.error('Error al ejecutar migraciones:', errorMessage(error));
       process.exit(1);
     });
 }

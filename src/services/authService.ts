@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { errorMessage } from '../errors/httpError.js';
 import { badRequest, conflict, forbidden, unauthorized } from '../errors/httpError.js';
 import type {
   EmailVerificationTokenRepository,
@@ -159,8 +160,8 @@ export class AuthService {
 
     const resetUrl = `${this.deps.appUrl}/reset-password?token=${encodeURIComponent(token)}`;
     // Sin await: el tiempo de respuesta no depende del envío del correo.
-    this.deps.mailer.sendPasswordReset(user.email, resetUrl).catch((error: Error) => {
-      console.error('No se pudo enviar el correo de restablecimiento:', error.message);
+    this.deps.mailer.sendPasswordReset(user.email, resetUrl).catch((error: unknown) => {
+      console.error('No se pudo enviar el correo de restablecimiento:', errorMessage(error));
     });
   }
 
@@ -205,8 +206,8 @@ export class AuthService {
 
     const verifyUrl = `${this.deps.appUrl}/verify-email?token=${encodeURIComponent(token)}`;
     // Sin await: ni el registro ni el reenvío dependen de que el proveedor de correo responda.
-    this.deps.mailer.sendEmailVerification(user.email, verifyUrl).catch((error: Error) => {
-      console.error('No se pudo enviar el correo de verificación:', error.message);
+    this.deps.mailer.sendEmailVerification(user.email, verifyUrl).catch((error: unknown) => {
+      console.error('No se pudo enviar el correo de verificación:', errorMessage(error));
     });
   }
 

@@ -12,8 +12,8 @@ interface EmailContent {
   html: string;
 }
 
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
+const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => HTML_ENTITIES[char] ?? char);
 
 export function passwordResetEmail(resetUrl: string): EmailContent {
   const subject = 'Restablece tu contraseña de AutoCheck-CO';

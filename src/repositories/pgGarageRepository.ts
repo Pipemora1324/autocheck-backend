@@ -91,7 +91,7 @@ export class PgGarageRepository implements GarageRepository {
           vehicle.fuelType, vehicle.serviceType, vehicle.mileageKm, vehicle.source
         ]
       );
-      return toRecord(rows[0]!);
+      return toRecord(rows[0]);
     } catch (error) {
       if ((error as { code?: string }).code === UNIQUE_VIOLATION) return null;
       throw error;

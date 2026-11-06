@@ -34,22 +34,22 @@ export function createAuthController(service: AuthService, cookie: CookieConfig)
   };
 
   const refreshCookie = (request: Request): string | undefined => {
-    const value: unknown = request.cookies?.[REFRESH_COOKIE];
+    const value = (request.cookies as Record<string, unknown>)[REFRESH_COOKIE];
     return typeof value === 'string' ? value : undefined;
   };
 
   return {
-    async register(request: Request, response: Response): Promise<void> {
+    register: async (request: Request, response: Response): Promise<void> => {
       const { email, password } = registerSchema.parse(request.body);
       sendSession(response, await service.register(email, password), 201);
     },
 
-    async login(request: Request, response: Response): Promise<void> {
+    login: async (request: Request, response: Response): Promise<void> => {
       const { email, password } = loginSchema.parse(request.body);
       sendSession(response, await service.login(email, password));
     },
 
-    async refresh(request: Request, response: Response): Promise<void> {
+    refresh: async (request: Request, response: Response): Promise<void> => {
       try {
         sendSession(response, await service.refresh(refreshCookie(request)));
       } catch (error) {
@@ -58,40 +58,40 @@ export function createAuthController(service: AuthService, cookie: CookieConfig)
       }
     },
 
-    async logout(request: Request, response: Response): Promise<void> {
+    logout: async (request: Request, response: Response): Promise<void> => {
       await service.logout(refreshCookie(request));
       response.clearCookie(REFRESH_COOKIE, cookieOptions).status(204).end();
     },
 
-    async me(request: Request, response: Response): Promise<void> {
+    me: async (request: Request, response: Response): Promise<void> => {
       response.json({ user: await service.me(currentUser(request).id) });
     },
 
-    async deleteAccount(request: Request, response: Response): Promise<void> {
+    deleteAccount: async (request: Request, response: Response): Promise<void> => {
       const { password } = deleteAccountSchema.parse(request.body);
       await service.deleteAccount(currentUser(request).id, password);
       response.clearCookie(REFRESH_COOKIE, cookieOptions).status(204).end();
     },
 
-    async forgotPassword(request: Request, response: Response): Promise<void> {
+    forgotPassword: async (request: Request, response: Response): Promise<void> => {
       const { email } = forgotPasswordSchema.parse(request.body);
       await service.forgotPassword(email);
       response.status(202).json({ message: FORGOT_PASSWORD_MESSAGE });
     },
 
-    async resetPassword(request: Request, response: Response): Promise<void> {
+    resetPassword: async (request: Request, response: Response): Promise<void> => {
       const { token, password } = resetPasswordSchema.parse(request.body);
       await service.resetPassword(token, password);
       response.json({ message: 'Tu contraseña fue actualizada. Ya puedes iniciar sesión.' });
     },
 
-    async verifyEmail(request: Request, response: Response): Promise<void> {
+    verifyEmail: async (request: Request, response: Response): Promise<void> => {
       const { token } = verifyEmailSchema.parse(request.body);
       await service.verifyEmail(token);
       response.json({ message: 'Tu correo fue confirmado.', emailVerified: true });
     },
 
-    async resendVerification(request: Request, response: Response): Promise<void> {
+    resendVerification: async (request: Request, response: Response): Promise<void> => {
       const { email } = resendVerificationSchema.parse(request.body);
       await service.resendVerification(email);
       response.status(202).json({ message: RESEND_VERIFICATION_MESSAGE });

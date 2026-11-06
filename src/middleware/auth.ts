@@ -7,7 +7,7 @@ export function requireAuth(tokens: TokenService): RequestHandler {
   return (request: Request, _response: Response, next: NextFunction) => {
     const header = request.get('authorization') ?? '';
     const [scheme, token] = header.split(' ');
-    const user = scheme?.toLowerCase() === 'bearer' && token ? tokens.verifyAccessToken(token) : null;
+    const user = scheme.toLowerCase() === 'bearer' && token ? tokens.verifyAccessToken(token) : null;
     if (!user) {
       next(unauthorized('Debes iniciar sesión para acceder a este recurso.'));
       return;

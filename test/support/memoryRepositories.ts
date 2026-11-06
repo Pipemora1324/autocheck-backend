@@ -181,15 +181,15 @@ export class MemoryDiagnosisRepository implements DiagnosisRepository {
   /** Simula los ON DELETE CASCADE de la base. */
   deleteWhere(predicate: (item: DiagnosisRecord) => boolean) {
     for (let index = this.diagnoses.length - 1; index >= 0; index--) {
-      if (predicate(this.diagnoses[index]!)) {
+      if (predicate(this.diagnoses[index])) {
         const [removed] = this.diagnoses.splice(index, 1);
-        this.dropMessages(removed!.id);
+        this.dropMessages(removed.id);
       }
     }
   }
 
   private dropMessages(diagnosisId: string) {
-    for (let index = this.messages.length - 1; index >= 0; index--) if (this.messages[index]!.diagnosisId === diagnosisId) this.messages.splice(index, 1);
+    for (let index = this.messages.length - 1; index >= 0; index--) if (this.messages[index].diagnosisId === diagnosisId) this.messages.splice(index, 1);
   }
 }
 
@@ -222,7 +222,7 @@ export class MemoryGarageRepository implements GarageRepository {
   async update(userId: string, plate: string, patch: GarageVehiclePatch) {
     const found = this.vehicles.find((item) => item.userId === userId && item.plate === plate);
     if (!found) return null;
-    for (const [key, value] of Object.entries(patch)) if (value !== undefined) Object.assign(found, { [key]: value });
+    for (const [key, value] of Object.entries(patch) as Array<[string, unknown]>) if (value !== undefined) Object.assign(found, { [key]: value });
     found.updatedAt = new Date().toISOString();
     return { ...found };
   }
@@ -231,11 +231,11 @@ export class MemoryGarageRepository implements GarageRepository {
     const index = this.vehicles.findIndex((item) => item.userId === userId && item.plate === plate);
     if (index < 0) return false;
     const [removed] = this.vehicles.splice(index, 1);
-    for (const listener of this.onDeleteVehicle) listener(removed!.id);
+    for (const listener of this.onDeleteVehicle) listener(removed.id);
     return true;
   }
 
   deleteAllFor(userId: string) {
-    for (let index = this.vehicles.length - 1; index >= 0; index--) if (this.vehicles[index]!.userId === userId) this.vehicles.splice(index, 1);
+    for (let index = this.vehicles.length - 1; index >= 0; index--) if (this.vehicles[index].userId === userId) this.vehicles.splice(index, 1);
   }
 }

@@ -19,7 +19,7 @@ export class FakeGemini {
   }
 
   readonly fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
-    this.calls.push(JSON.parse(String(init!.body)));
+    this.calls.push(JSON.parse(init!.body as string));
     const body = this.status === 200
       ? { status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: this.output }] }] }
       : { error: { message: PROVIDER_DETAIL } };

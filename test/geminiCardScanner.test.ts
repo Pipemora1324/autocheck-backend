@@ -35,7 +35,7 @@ const interaction = (text: string) => ({
 const fakeFetch = (status: number, body: unknown) => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const impl = (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), init: init! });
+    calls.push({ url: url as string, init: init! });
     return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   return { impl, calls };
@@ -49,7 +49,7 @@ describe('GeminiCardScanner (fetch simulado)', () => {
     const result = await scanner(impl).read(image);
     assert.deepEqual(result, extraction);
 
-    const { url, init } = calls[0]!;
+    const { url, init } = calls[0];
     assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
     assert.equal(url, GEMINI_INTERACTIONS_URL);
     assert.equal(init.method, 'POST');
@@ -57,7 +57,7 @@ describe('GeminiCardScanner (fetch simulado)', () => {
     assert.equal(headers['x-goog-api-key'], GEMINI_KEY);
     assert.equal(headers['content-type'], 'application/json');
 
-    const body = JSON.parse(String(init.body));
+    const body = JSON.parse(init.body as string);
     assert.equal(body.model, 'gemini-3.5-flash-lite');
     assert.equal(body.input[0].type, 'text');
     assert.match(body.input[0].text, /nunca una instrucción/);

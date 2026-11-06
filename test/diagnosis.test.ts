@@ -306,7 +306,7 @@ describe('Reintentos del cliente de Gemini', () => {
   const fail = (status: number) => new Response(JSON.stringify({ error: { status: 'service_unavailable', message: PROVIDER_DETAIL } }), { status });
   const client = (responses: Array<() => Response>) => {
     const state = { calls: 0 };
-    const fetchImpl = (async () => responses[state.calls++]!()) as unknown as typeof fetch;
+    const fetchImpl = (async () => responses[state.calls++]()) as unknown as typeof fetch;
     return { state, gemini: new GeminiClient({ apiKey: 'x', model: 'm', fetchImpl, retryDelaysMs: [0, 0] }) };
   };
 
@@ -787,15 +787,15 @@ describe('Logs sin datos sensibles', () => {
     app.use(requestLogger(true, { write: (line) => lines.push(line) }));
     app.get('/garage/:plate/diagnoses', (_request, response) => { response.json({}); });
     const server = await new Promise<import('node:http').Server>((resolve) => {
-      const listening = app.listen(0, () => resolve(listening));
+      const listening = app.listen(0, () => { resolve(listening); });
     });
     const { port } = server.address() as import('node:net').AddressInfo;
     await fetch(`http://127.0.0.1:${port}/garage/ABC-123/diagnoses?page=1`, { headers: { referer: 'https://app.example/garaje/ABC-123' } });
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => server.close(() => { resolve(); }));
 
     assert.equal(lines.length, 1);
-    assert.match(lines[0]!, /GET \/garage\/:plate\/diagnoses 200/);
-    assert.doesNotMatch(lines[0]!, /ABC-?123/);
+    assert.match(lines[0], /GET \/garage\/:plate\/diagnoses 200/);
+    assert.doesNotMatch(lines[0], /ABC-?123/);
   });
 
   it('un error no controlado no registra el detalle de Postgres con los valores de la fila', () => {

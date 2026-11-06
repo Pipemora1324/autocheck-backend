@@ -30,7 +30,7 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
     await runMigrations(databaseUrl!);
   });
-  after(() => pool?.end());
+  after(() => pool.end());
 
   it('usuarios: correo único y en minúsculas', async () => {
     const users = new PgUserRepository(pool);

@@ -5,6 +5,7 @@ build/
 .angular/
 coverage/
 *.tsbuildinfo
+*.tmp.json
 
 # Secretos
 .env

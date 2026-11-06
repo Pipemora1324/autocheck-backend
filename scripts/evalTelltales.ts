@@ -7,6 +7,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { applySafetyFloor, worstUrgency } from '../src/domain/diagnosisSafety.js';
+import { errorMessage } from '../src/errors/httpError.js';
 import { detectImageType } from '../src/domain/imageSignature.js';
 import { GeminiTelltaleIdentifier } from '../src/services/geminiTelltaleIdentifier.js';
 import { TelltaleIdentifierBusyError, type TelltaleIdentifier } from '../src/services/telltaleIdentifier.js';
@@ -113,9 +114,9 @@ function main(): void {
   const identifier = new GeminiTelltaleIdentifier({ apiKey, model });
   console.log(`Evaluando ${files.length} imágenes con ${model}, ${delayMs / 1000} s entre llamadas. Se envían a Gemini: usa solo fotos que puedas compartir.\n`);
   runEvaluation(identifier, files, (archivo) => readFileSync(path.join(EVAL_DIR, archivo)), { delayMs, log: console.log })
-    .then((rows) => console.log(`\n${formatReport(rows)}`))
-    .catch((error: Error) => {
-      console.error(error.message);
+    .then((rows) => { console.log(`\n${formatReport(rows)}`); })
+    .catch((error: unknown) => {
+      console.error(errorMessage(error));
       process.exitCode = 1;
     });
 }

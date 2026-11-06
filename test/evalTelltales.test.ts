@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { evaluateImage, formatReport, runEvaluation } from '../scripts/evalTelltales.js';
-import { TelltaleIdentifierBusyError, TelltaleIdentifierUnavailableError, type DashboardReading, type ModelTelltale, type TelltaleIdentifier } from '../src/services/telltaleIdentifier.js';
+import { TelltaleIdentifierBusyError, TelltaleIdentifierUnavailableError, type DashboardReading, type TelltaleIdentifier } from '../src/services/telltaleIdentifier.js';
 import { modelTelltale, reading } from './support/fakeGemini.js';
 
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
@@ -11,7 +11,7 @@ const fakeIdentifier = (...answers: Array<DashboardReading | Error>): TelltaleId
   provider: 'gemini',
   calls: 0,
   async identify() {
-    const answer = answers[this.calls++]!;
+    const answer = answers[this.calls++];
     if (answer instanceof Error) throw answer;
     return answer;
   }
@@ -19,10 +19,10 @@ const fakeIdentifier = (...answers: Array<DashboardReading | Error>): TelltaleId
 
 describe('eval:telltales', () => {
   it('evalúa lo que vería el usuario: los testigos pasan por el piso de seguridad', async () => {
-    const row = await evaluateImage(fakeIdentifier(asReading([modelTelltale({ nombre: 'Aceite', categoria: 'aceite', urgencia: 'informativo' }) as ModelTelltale])), 'a.jpg', JPEG);
+    const row = await evaluateImage(fakeIdentifier(asReading([modelTelltale({ nombre: 'Aceite', categoria: 'aceite', urgencia: 'informativo' })])), 'a.jpg', JPEG);
     assert.equal(row.resultado, 'ok');
     assert.equal(row.general, 'rojo');
-    assert.equal(row.testigos[0]!.urgencia, 'rojo');
+    assert.equal(row.testigos[0].urgencia, 'rojo');
   });
 
   it('distingue una foto sin testigos de una que pide mejor foto, y una que no es imagen no llama a la IA', async () => {
@@ -45,17 +45,17 @@ describe('eval:telltales', () => {
     const waits: number[] = [];
     const options = { delayMs: 1, busyWaitMs: 99, wait: async (ms: number) => waits.push(ms) };
     const retried = await runEvaluation(fakeIdentifier(new TelltaleIdentifierBusyError('429'), asReading([modelTelltale()])), ['a.jpg'], () => JPEG, options);
-    assert.equal(retried[0]!.resultado, 'ok');
+    assert.equal(retried[0].resultado, 'ok');
     assert.deepEqual(waits, [99]);
 
     const busy = await runEvaluation(fakeIdentifier(new TelltaleIdentifierBusyError('429'), new TelltaleIdentifierBusyError('429')), ['a.jpg'], () => JPEG, options);
-    assert.match(busy[0]!.resultado, /proveedor ocupado/);
+    assert.match(busy[0].resultado, /proveedor ocupado/);
 
     const providerDetail = 'detalle-privado-del-proveedor';
     const down = await runEvaluation(fakeIdentifier(new TelltaleIdentifierUnavailableError(providerDetail), asReading([modelTelltale()])), ['a.jpg', 'b.jpg'], () => JPEG, options);
     assert.equal(down.length, 2);
-    assert.ok(!down[0]!.resultado.includes(providerDetail));
-    assert.equal(down[1]!.resultado, 'ok');
+    assert.ok(!down[0].resultado.includes(providerDetail));
+    assert.equal(down[1].resultado, 'ok');
   });
 
   it('el reporte muestra cada testigo y el total', () => {

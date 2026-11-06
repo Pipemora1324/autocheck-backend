@@ -7,6 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { detectImageType } from '../src/domain/imageSignature.js';
+import { errorMessage } from '../src/errors/httpError.js';
 import { GEMINI_API_REVISION, GEMINI_INTERACTIONS_URL } from '../src/services/geminiClient.js';
 
 const MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -39,7 +40,7 @@ const crcTable = Array.from({ length: 256 }, (_, n) => {
 
 const crc32 = (data: Buffer) => {
   let c = 0xffffffff;
-  for (const byte of data) c = crcTable[(c ^ byte) & 0xff]! ^ (c >>> 8);
+  for (const byte of data) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 };
 
@@ -177,8 +178,8 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error: Error) => {
-    console.error(error.message);
+  main().catch((error: unknown) => {
+    console.error(errorMessage(error));
     process.exitCode = 1;
   });
 }

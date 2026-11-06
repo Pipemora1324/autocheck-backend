@@ -32,6 +32,6 @@ describe('Placas colombianas', () => {
     assert.equal(colombianPlateSchema.parse('def456'), 'DEF-456');
     const result = colombianPlateSchema.safeParse('ABC-1234');
     assert.equal(result.success, false);
-    assert.match(result.error!.issues[0]!.message, /ABC-123 \(carro\) o ABC-12D \(moto\)/);
+    assert.match(result.error.issues[0].message, /ABC-123 \(carro\) o ABC-12D \(moto\)/);
   });
 });

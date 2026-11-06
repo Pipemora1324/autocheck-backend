@@ -74,8 +74,8 @@ describe('loadConfig', () => {
     assert.throws(() => loadConfig({ ...valid, EMAIL_PROVIDER: 'mailgun' }), /EMAIL_PROVIDER/);
 
     const smtp = loadConfig({ ...valid, EMAIL_PROVIDER: 'SMTP', SMTP_HOST: 'smtp.example.com', SMTP_PORT: '465', SMTP_USER: 'u', SMTP_PASS: 'p', MAIL_FROM: 'a@b.co', MAIL_FROM_NAME: 'Taller' });
-    assert.equal(smtp.email.provider, 'smtp');
-    assert.deepEqual(smtp.email.provider === 'smtp' && { port: smtp.email.port, from: smtp.email.from }, { port: 465, from: { email: 'a@b.co', name: 'Taller' } });
+    if (smtp.email.provider !== 'smtp') throw new Error(`Proveedor inesperado: ${smtp.email.provider}`);
+    assert.deepEqual({ port: smtp.email.port, from: smtp.email.from }, { port: 465, from: { email: 'a@b.co', name: 'Taller' } });
   });
 
   it('ADMIN_EMAILS: lista normalizada y validada', () => {

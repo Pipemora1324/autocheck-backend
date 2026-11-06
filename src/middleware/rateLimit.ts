@@ -46,7 +46,7 @@ const limiter = (limit: number, message: string): RequestHandler =>
   });
 
 const emailFromBody = (request: Request): string => {
-  const email: unknown = request.body?.email;
+  const { email } = (request.body ?? {}) as { email?: unknown };
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
 };
 
@@ -107,7 +107,7 @@ export function perUserHourlyLimiter(limit: number, message: string, { details, 
 }
 
 const isManualChoice = (request: Request): boolean => {
-  const telltaleId: unknown = request.body?.telltaleId;
+  const { telltaleId } = (request.body ?? {}) as { telltaleId?: unknown };
   return typeof telltaleId === 'string' && telltaleId.trim() !== '';
 };
 

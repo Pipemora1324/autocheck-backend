@@ -1,0 +1,9 @@
+dist/
+coverage/
+node_modules/
+eval-images/
+.agents/
+package-lock.json
+skills-lock.json
+migrations/
+*.md

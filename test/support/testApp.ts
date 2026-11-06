@@ -150,7 +150,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
     now: () => clock.now
   });
   const garageService = new GarageService(garage);
-  garage.onDeleteVehicle.push((vehicleId) => diagnoses.deleteWhere((item) => item.vehicleId === vehicleId));
+  garage.onDeleteVehicle.push((vehicleId) => { diagnoses.deleteWhere((item) => item.vehicleId === vehicleId); });
 
   const app = createApp({
     config: {
@@ -172,7 +172,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
   });
 
   const server: Server = await new Promise((resolve) => {
-    const listening = app.listen(0, () => resolve(listening));
+    const listening = app.listen(0, () => { resolve(listening); });
   });
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -231,6 +231,6 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestCo
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) : null, headers: response.headers, cookie: undefined };
     },
-    close: () => new Promise((resolve) => server.close(() => resolve()))
+    close: () => new Promise((resolve) => server.close(() => { resolve(); }))
   };
 }

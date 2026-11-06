@@ -73,11 +73,11 @@ function start(): void {
   const shutdown = (signal: string) => {
     console.log(`${signal} recibido, cerrando servidor...`);
     server.close(() => {
-      pool.end().finally(() => process.exit(0));
+      void pool.end().finally(() => process.exit(0));
     });
   };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => { shutdown('SIGTERM'); });
+  process.on('SIGINT', () => { shutdown('SIGINT'); });
 }
 
 start();

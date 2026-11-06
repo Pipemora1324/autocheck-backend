@@ -20,12 +20,12 @@ const diagnosisStatus = (diagnosis: DiagnosisService) => ({
 export function createConfigController(cardScan: CardScanService, diagnosis: DiagnosisService) {
   return {
     /** Qué funciones opcionales están activas en este servidor, para que el frontend muestre u oculte botones. */
-    capabilities(_request: Request, response: Response): void {
+    capabilities: (_request: Request, response: Response): void => {
       response.json({ cardScan: cardScanStatus(cardScan), diagnosis: diagnosisStatus(diagnosis) });
     },
 
     /** GET /config/public (sin sesión): texto de consentimiento y avisos para mostrar antes de registrarse o subir la foto. */
-    publicConfig(_request: Request, response: Response): void {
+    publicConfig: (_request: Request, response: Response): void => {
       response.json({
         privacyPolicy: { version: PRIVACY_POLICY_VERSION, registrationConsent: REGISTRATION_CONSENT_TEXT },
         cardScan: cardScanStatus(cardScan),

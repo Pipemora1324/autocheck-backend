@@ -45,7 +45,7 @@ export class PgDiagnosisRepository implements DiagnosisRepository {
        RETURNING *`,
       [diagnosis.userId, diagnosis.vehicleId, diagnosis.telltaleId, diagnosis.severidad, diagnosis.confianza, diagnosis.descripcion, diagnosis.resultado === null ? null : JSON.stringify(diagnosis.resultado)]
     );
-    return toRecord(rows[0]!);
+    return toRecord(rows[0]);
   }
 
   async list(userId: string, vehicleId: string, { limit, offset }: { limit: number; offset: number }): Promise<DiagnosisPage> {
@@ -88,7 +88,11 @@ export class PgDiagnosisRepository implements DiagnosisRepository {
        RETURNING id, role, content, created_at`,
       [diagnosisId, question, answer]
     );
-    const find = (role: DiagnosisMessageRole) => toMessage(rows.find((row) => row.role === role)!);
+    const find = (role: DiagnosisMessageRole) => {
+      const row = rows.find((item) => item.role === role);
+      if (!row) throw new Error(`INSERT no devolvió el mensaje ${role}.`);
+      return toMessage(row);
+    };
     return { question: find('user'), answer: find('assistant') };
   }
 }

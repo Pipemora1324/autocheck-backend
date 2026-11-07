@@ -7,6 +7,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { detectImageType } from '../src/domain/imageSignature.js';
+import { errorMessage } from '../src/errors/httpError.js';
 import { GEMINI_API_REVISION, GEMINI_INTERACTIONS_URL } from '../src/services/geminiClient.js';
 
 const MODELS_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -14,7 +15,8 @@ const EVAL_DIR = 'eval-images';
 const DELAY_MS = 7_000;
 const TIMEOUT_MS = 45_000;
 const MAX_CANDIDATES = 8;
-const NOT_VISION = /embedding|tts|audio|image|banana|transcribe|robotics|computer-use|live|aqa|learnlm|deep-research|customtools/i;
+const NOT_VISION =
+  /embedding|tts|audio|image|banana|transcribe|robotics|computer-use|live|aqa|learnlm|deep-research|customtools/i;
 
 export interface ListedModel {
   name: string;
@@ -39,7 +41,7 @@ const crcTable = Array.from({ length: 256 }, (_, n) => {
 
 const crc32 = (data: Buffer) => {
   let c = 0xffffffff;
-  for (const byte of data) c = crcTable[(c ^ byte) & 0xff]! ^ (c >>> 8);
+  for (const byte of data) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 };
 
@@ -61,7 +63,12 @@ export function syntheticPng(size = 64): Buffer {
   header[9] = 2;
   const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(size * 3, Buffer.from([200, 30, 30]))]);
   const pixels = Buffer.concat(Array.from({ length: size }, () => row));
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', header), pngChunk('IDAT', deflateSync(pixels)), pngChunk('IEND', Buffer.alloc(0))]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(pixels)),
+    pngChunk('IEND', Buffer.alloc(0))
+  ]);
 }
 
 function testImage(): { data: Buffer; mediaType: string; origen: string } {
@@ -78,15 +85,25 @@ function testImage(): { data: Buffer; mediaType: string; origen: string } {
 }
 
 interface ProviderErrorBody {
-  error?: { status?: string; code?: string | number; details?: Array<{ violations?: Array<{ quotaId?: string }>; retryDelay?: string }> };
+  error?: {
+    status?: string;
+    code?: string | number;
+    details?: Array<{ violations?: Array<{ quotaId?: string }>; retryDelay?: string }>;
+  };
 }
 
 /** Solo el tipo de error y, en un 429, qué cuota se agotó y cuánto esperar. Nunca el mensaje completo. */
 export function describeProviderError(body: ProviderErrorBody): string {
   const details = body.error?.details ?? [];
-  const quotas = details.flatMap((detail) => detail.violations ?? []).flatMap((violation) => (violation.quotaId ? [violation.quotaId] : []));
+  const quotas = details
+    .flatMap((detail) => detail.violations ?? [])
+    .flatMap((violation) => (violation.quotaId ? [violation.quotaId] : []));
   const retry = details.find((detail) => detail.retryDelay)?.retryDelay;
-  return [body.error?.status ?? body.error?.code ?? '-', ...new Set(quotas), ...(retry ? [`reintentar en ${retry}`] : [])].join(' ');
+  return [
+    body.error?.status ?? body.error?.code ?? '-',
+    ...new Set(quotas),
+    ...(retry ? [`reintentar en ${retry}`] : [])
+  ].join(' ');
 }
 
 const providerStatus = async (response: Response): Promise<string> => {
@@ -102,7 +119,10 @@ async function listModels(apiKey: string): Promise<ListedModel[]> {
   let pageToken = '';
   do {
     const url = `${MODELS_URL}?pageSize=200${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-    const response = await fetch(url, { headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const response = await fetch(url, {
+      headers: { 'x-goog-api-key': apiKey },
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    });
     if (!response.ok) throw new Error(`models.list respondió ${response.status} (${await providerStatus(response)}).`);
     const body = (await response.json()) as { models?: ListedModel[]; nextPageToken?: string };
     models.push(...(body.models ?? []));
@@ -136,13 +156,24 @@ async function probe(apiKey: string, model: string, image: { data: Buffer; media
   }
 }
 
-async function probeGenerateContent(apiKey: string, model: string, image: { data: Buffer; mediaType: string }): Promise<string> {
+async function probeGenerateContent(
+  apiKey: string,
+  model: string,
+  image: { data: Buffer; mediaType: string }
+): Promise<string> {
   try {
     const response = await fetch(`${MODELS_URL}/${model}:generateContent`, {
       method: 'POST',
       headers: { 'x-goog-api-key': apiKey, 'content-type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: 'Responde en JSON: ¿es esta imagen un tablero de vehículo?' }, { inlineData: { mimeType: image.mediaType, data: image.data.toString('base64') } }] }],
+        contents: [
+          {
+            parts: [
+              { text: 'Responde en JSON: ¿es esta imagen un tablero de vehículo?' },
+              { inlineData: { mimeType: image.mediaType, data: image.data.toString('base64') } }
+            ]
+          }
+        ],
         generationConfig: { responseMimeType: 'application/json' }
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS)
@@ -177,8 +208,10 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error: Error) => {
-    console.error(error.message);
+  try {
+    await main();
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exitCode = 1;
-  });
+  }
 }

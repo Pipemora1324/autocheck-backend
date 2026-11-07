@@ -1,12 +1,20 @@
 import type { Request, RequestHandler, Response } from 'express';
 import multer from 'multer';
+import { z } from 'zod';
 import { currentUser } from '../middleware/auth.js';
 import type { DiagnosisChatService } from '../services/diagnosisChat.js';
 import type { DiagnosisService } from '../services/diagnosisService.js';
-import { chatMessageSchema, diagnosisHistoryQuerySchema, diagnosisIdParamsSchema, diagnosisInputSchema } from '../validation/diagnosisSchemas.js';
+import {
+  chatMessageSchema,
+  diagnosisHistoryQuerySchema,
+  diagnosisIdParamsSchema,
+  diagnosisInputSchema
+} from '../validation/diagnosisSchemas.js';
 import { garagePlateParamsSchema } from '../validation/garageSchemas.js';
 import { MAX_CARD_IMAGE_BYTES } from './cardScanController.js';
 
+/** Opcional: el id con que el cliente reconoce los eventos de progreso de esta solicitud. */
+const PROGRESS_HEADER = 'x-diagnosis-request';
 // Suficiente para 500 caracteres en cualquier codificación UTF-8. El límite real de caracteres lo aplica zod.
 const MAX_TEXT_FIELD_BYTES = 4 * 1024;
 
@@ -18,48 +26,56 @@ export const diagnosisUpload: RequestHandler = multer({
 
 export function createDiagnosisController(service: DiagnosisService, chat: DiagnosisChatService) {
   return {
-    async create(request: Request, response: Response): Promise<void> {
+    create: async (request: Request, response: Response): Promise<void> => {
       const { plate } = garagePlateParamsSchema.parse(request.params);
       const { description, telltaleId, parpadea } = diagnosisInputSchema.parse(request.body ?? {});
       const image = request.file?.buffer;
       // Se suelta la referencia para que la imagen no viva más allá del procesamiento.
       if (request.file) request.file.buffer = Buffer.alloc(0);
 
+      const requestId = z.uuid().safeParse(request.get(PROGRESS_HEADER));
       const result = await service.diagnose(currentUser(request).id, plate, {
+        ...(requestId.success ? { requestId: requestId.data } : {}),
         ...(image ? { image } : {}),
         ...(description ? { description } : {}),
         ...(telltaleId ? { telltaleId } : {}),
         ...(parpadea !== undefined ? { blinking: parpadea } : {})
       });
-      response.set('Cache-Control', 'no-store').status(result.status === 'diagnosed' ? 201 : 200).json(result);
+      response
+        .set('Cache-Control', 'no-store')
+        .status(result.status === 'diagnosed' ? 201 : 200)
+        .json(result);
     },
 
-    async list(request: Request, response: Response): Promise<void> {
+    list: async (request: Request, response: Response): Promise<void> => {
       const { plate } = garagePlateParamsSchema.parse(request.params);
       const { page, limit } = diagnosisHistoryQuerySchema.parse(request.query);
       response.set('Cache-Control', 'no-store').json(await service.list(currentUser(request).id, plate, page, limit));
     },
 
-    async get(request: Request, response: Response): Promise<void> {
+    get: async (request: Request, response: Response): Promise<void> => {
       const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
       response.set('Cache-Control', 'no-store').json(await service.get(currentUser(request).id, plate, id));
     },
 
-    async remove(request: Request, response: Response): Promise<void> {
+    remove: async (request: Request, response: Response): Promise<void> => {
       const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
       await service.remove(currentUser(request).id, plate, id);
       response.status(204).end();
     },
 
-    async listMessages(request: Request, response: Response): Promise<void> {
+    listMessages: async (request: Request, response: Response): Promise<void> => {
       const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
       response.set('Cache-Control', 'no-store').json(await chat.history(currentUser(request).id, plate, id));
     },
 
-    async sendMessage(request: Request, response: Response): Promise<void> {
+    sendMessage: async (request: Request, response: Response): Promise<void> => {
       const { plate, id } = diagnosisIdParamsSchema.parse(request.params);
       const { message } = chatMessageSchema.parse(request.body ?? {});
-      response.set('Cache-Control', 'no-store').status(201).json(await chat.send(currentUser(request).id, plate, id, message));
+      response
+        .set('Cache-Control', 'no-store')
+        .status(201)
+        .json(await chat.send(currentUser(request).id, plate, id, message));
     }
   };
 }

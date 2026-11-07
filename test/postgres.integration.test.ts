@@ -11,7 +11,7 @@ import {
 } from '../src/repositories/pgAuthRepositories.js';
 import { PgDiagnosisRepository } from '../src/repositories/pgDiagnosisRepository.js';
 import { PgGarageRepository } from '../src/repositories/pgGarageRepository.js';
-import { hashResetToken } from '../src/services/authService.js';
+import { hashOneTimeToken } from '../src/services/authService.js';
 import { newUser } from './support/fixtures.js';
 
 // Requiere TEST_DATABASE_URL apuntando a una base desechable: se borra el esquema public antes de migrar.
@@ -30,7 +30,7 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
     await runMigrations(databaseUrl!);
   });
-  after(() => pool?.end());
+  after(() => pool.end());
 
   it('usuarios: correo único y en minúsculas', async () => {
     const users = new PgUserRepository(pool);
@@ -46,14 +46,17 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const tokens = new PgPasswordResetTokenRepository(pool);
     const now = new Date();
     const expires = new Date(now.getTime() + 30 * 60_000);
-    await tokens.create(user.id, hashResetToken('token-a'), expires);
-    await tokens.create(user.id, hashResetToken('token-b'), expires);
-    await tokens.create(user.id, hashResetToken('token-expirado'), new Date(now.getTime() - 1000));
+    await tokens.create(user.id, hashOneTimeToken('token-a'), expires);
+    await tokens.create(user.id, hashOneTimeToken('token-b'), expires);
+    await tokens.create(user.id, hashOneTimeToken('token-expirado'), new Date(now.getTime() - 1000));
 
-    assert.equal(await tokens.consume(hashResetToken('token-expirado'), now), null);
-    const results = await Promise.all([tokens.consume(hashResetToken('token-a'), now), tokens.consume(hashResetToken('token-a'), now)]);
+    assert.equal(await tokens.consume(hashOneTimeToken('token-expirado'), now), null);
+    const results = await Promise.all([
+      tokens.consume(hashOneTimeToken('token-a'), now),
+      tokens.consume(hashOneTimeToken('token-a'), now)
+    ]);
     assert.deepEqual(results.filter(Boolean), [user.id]);
-    assert.equal(await tokens.consume(hashResetToken('token-b'), now), null);
+    assert.equal(await tokens.consume(hashOneTimeToken('token-b'), now), null);
   });
 
   it('refresh tokens: revocación única y por familia', async () => {
@@ -79,9 +82,9 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
 
     const tokens = new PgEmailVerificationTokenRepository(pool);
     const now = new Date();
-    await tokens.create(user.id, hashResetToken('verif-a'), new Date(now.getTime() + 60_000));
-    assert.equal(await tokens.consume(hashResetToken('verif-a'), now), user.id);
-    assert.equal(await tokens.consume(hashResetToken('verif-a'), now), null);
+    await tokens.create(user.id, hashOneTimeToken('verif-a'), new Date(now.getTime() + 60_000));
+    assert.equal(await tokens.consume(hashOneTimeToken('verif-a'), now), user.id);
+    assert.equal(await tokens.consume(hashOneTimeToken('verif-a'), now), null);
 
     const first = new Date('2026-11-01T10:00:00Z');
     await users.markEmailVerified(user.id, first);
@@ -94,9 +97,12 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.ok(user.termsAcceptedAt);
     assert.equal(user.termsVersion, 'test');
     const expires = new Date(Date.now() + 60_000);
-    await new PgRefreshTokenRepository(pool).create({ id: crypto.randomUUID(), userId: user.id, familyId: crypto.randomUUID() }, expires);
-    await new PgPasswordResetTokenRepository(pool).create(user.id, hashResetToken('borrar-reset'), expires);
-    await new PgEmailVerificationTokenRepository(pool).create(user.id, hashResetToken('borrar-verif'), expires);
+    await new PgRefreshTokenRepository(pool).create(
+      { id: crypto.randomUUID(), userId: user.id, familyId: crypto.randomUUID() },
+      expires
+    );
+    await new PgPasswordResetTokenRepository(pool).create(user.id, hashOneTimeToken('borrar-reset'), expires);
+    await new PgEmailVerificationTokenRepository(pool).create(user.id, hashOneTimeToken('borrar-verif'), expires);
 
     await users.delete(user.id);
     const { rows } = await pool.query(
@@ -112,8 +118,17 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const owner = (await users.create(newUser('garaje-pg@example.com')))!;
     const other = (await users.create(newUser('garaje-otro-pg@example.com')))!;
     const base = {
-      plate: 'ABC-123', brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: 1598, chassis: null,
-      fuelType: 'Gasolina' as const, serviceType: 'Particular' as const, mileageKm: 85000, source: 'manual' as const
+      plate: 'ABC-123',
+      brand: 'Renault',
+      model: 'Sandero',
+      year: 2019,
+      color: null,
+      cylinderCc: 1598,
+      chassis: null,
+      fuelType: 'Gasolina' as const,
+      serviceType: 'Particular' as const,
+      mileageKm: 85000,
+      source: 'manual' as const
     };
 
     const created = (await garage.create(owner.id, base))!;
@@ -143,23 +158,52 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const diagnoses = new PgDiagnosisRepository(pool);
     const owner = (await users.create(newUser('diagnostico-pg@example.com')))!;
     const other = (await users.create(newUser('diagnostico-otro-pg@example.com')))!;
-    const vehicleData = { brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: null, chassis: null, fuelType: null, serviceType: null, mileageKm: null, source: 'manual' as const };
+    const vehicleData = {
+      brand: 'Renault',
+      model: 'Sandero',
+      year: 2019,
+      color: null,
+      cylinderCc: null,
+      chassis: null,
+      fuelType: null,
+      serviceType: null,
+      mileageKm: null,
+      source: 'manual' as const
+    };
     const first = (await garage.create(owner.id, { ...vehicleData, plate: 'DGN-001' }))!;
     const second = (await garage.create(owner.id, { ...vehicleData, plate: 'DGN-002' }))!;
 
-    const base = { userId: owner.id, vehicleId: first.id, telltaleId: 'check_engine', severidad: 'amarillo' as const, resultado: null };
+    const base = {
+      userId: owner.id,
+      vehicleId: first.id,
+      telltaleId: 'check_engine',
+      severidad: 'amarillo' as const,
+      resultado: null
+    };
     const older = await diagnoses.create({ ...base, confianza: 0.91, descripcion: 'luz naranja' });
     const newer = await diagnoses.create({ ...base, confianza: null, descripcion: null });
     await diagnoses.create({ ...base, vehicleId: second.id, confianza: 0.8, descripcion: null });
     assert.equal(older.confianza, 0.91);
-    await assert.rejects(diagnoses.create({ ...base, severidad: 'verde' as never, confianza: null, descripcion: null }), /diagnoses_severidad_valid/);
+    await assert.rejects(
+      diagnoses.create({ ...base, severidad: 'verde' as never, confianza: null, descripcion: null }),
+      /diagnoses_severidad_valid/
+    );
     await assert.rejects(diagnoses.create({ ...base, confianza: 2, descripcion: null }), /diagnoses_confianza_valid/);
-    await assert.rejects(diagnoses.create({ ...base, confianza: null, descripcion: 'x'.repeat(501) }), /diagnoses_descripcion_length/);
+    await assert.rejects(
+      diagnoses.create({ ...base, confianza: null, descripcion: 'x'.repeat(501) }),
+      /diagnoses_descripcion_length/
+    );
 
     const page = await diagnoses.list(owner.id, first.id, { limit: 1, offset: 0 });
     assert.equal(page.total, 2);
-    assert.deepEqual(page.items.map((item) => item.id), [newer.id]);
-    assert.deepEqual((await diagnoses.list(owner.id, first.id, { limit: 1, offset: 1 })).items.map((item) => item.id), [older.id]);
+    assert.deepEqual(
+      page.items.map((item) => item.id),
+      [newer.id]
+    );
+    assert.deepEqual(
+      (await diagnoses.list(owner.id, first.id, { limit: 1, offset: 1 })).items.map((item) => item.id),
+      [older.id]
+    );
 
     assert.equal((await diagnoses.list(other.id, first.id, { limit: 10, offset: 0 })).total, 0);
     assert.equal((await diagnoses.find(owner.id, first.id, older.id))?.descripcion, 'luz naranja');
@@ -170,11 +214,21 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.equal((await diagnoses.list(owner.id, first.id, { limit: 10, offset: 0 })).total, 1);
 
     await garage.delete(owner.id, 'DGN-001');
-    assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE vehicle_id = $1', [first.id])).rows[0].total, 0);
-    assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total, 1);
+    assert.equal(
+      (await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE vehicle_id = $1', [first.id])).rows[0]
+        .total,
+      0
+    );
+    assert.equal(
+      (await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total,
+      1
+    );
 
     await users.delete(owner.id);
-    assert.equal((await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total, 0);
+    assert.equal(
+      (await pool.query('SELECT count(*)::int AS total FROM diagnoses WHERE user_id = $1', [owner.id])).rows[0].total,
+      0
+    );
   });
 
   it('diagnóstico con IA: guarda los testigos en JSON sin telltale_id, y la conversación se borra en cascada', async () => {
@@ -182,11 +236,39 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     const garage = new PgGarageRepository(pool);
     const diagnoses = new PgDiagnosisRepository(pool);
     const owner = (await users.create(newUser('chat-pg@example.com')))!;
-    const vehicleData = { brand: 'Renault', model: 'Sandero', year: 2019, color: null, cylinderCc: null, chassis: null, fuelType: null, serviceType: null, mileageKm: null, source: 'manual' as const };
+    const vehicleData = {
+      brand: 'Renault',
+      model: 'Sandero',
+      year: 2019,
+      color: null,
+      cylinderCc: null,
+      chassis: null,
+      fuelType: null,
+      serviceType: null,
+      mileageKm: null,
+      source: 'manual' as const
+    };
     const vehicle = (await garage.create(owner.id, { ...vehicleData, plate: 'CHT-001' }))!;
-    const resultado = { urgenciaGeneral: 'rojo' as const, debeDetenerse: true, accionGeneral: 'Detente.', mensajeGeneral: 'Hola "ñ".', mejorFoto: null, testigos: [] };
-    const base = { userId: owner.id, vehicleId: vehicle.id, telltaleId: null, severidad: 'rojo' as const, confianza: 0.9, descripcion: null, resultado };
-    const countMessages = async (id: string) => (await pool.query('SELECT count(*)::int AS total FROM diagnosis_messages WHERE diagnosis_id = $1', [id])).rows[0].total;
+    const resultado = {
+      urgenciaGeneral: 'rojo' as const,
+      debeDetenerse: true,
+      accionGeneral: 'Detente.',
+      mensajeGeneral: 'Hola "ñ".',
+      mejorFoto: null,
+      testigos: []
+    };
+    const base = {
+      userId: owner.id,
+      vehicleId: vehicle.id,
+      telltaleId: null,
+      severidad: 'rojo' as const,
+      confianza: 0.9,
+      descripcion: null,
+      resultado
+    };
+    const countMessages = async (id: string) =>
+      (await pool.query('SELECT count(*)::int AS total FROM diagnosis_messages WHERE diagnosis_id = $1', [id])).rows[0]
+        .total;
 
     const first = await diagnoses.create(base);
     assert.equal(first.telltaleId, null);
@@ -196,7 +278,10 @@ describe('Repositorios Postgres (integración)', { skip }, () => {
     assert.equal(saved.question.role, 'user');
     assert.equal(saved.answer.role, 'assistant');
     await diagnoses.addExchange(first.id, 'otra', 'otra respuesta');
-    assert.deepEqual((await diagnoses.listMessages(first.id)).map((item) => item.content), ['pregunta', 'respuesta', 'otra', 'otra respuesta']);
+    assert.deepEqual(
+      (await diagnoses.listMessages(first.id)).map((item) => item.content),
+      ['pregunta', 'respuesta', 'otra', 'otra respuesta']
+    );
     assert.equal(await diagnoses.countUserMessages(first.id), 2);
     await assert.rejects(diagnoses.addExchange(first.id, 'x'.repeat(6001), 'r'), /diagnosis_messages_content_length/);
     assert.equal(await countMessages(first.id), 4, 'un intercambio inválido no deja la mitad guardada');

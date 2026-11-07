@@ -45,13 +45,17 @@ describe('Garaje /garage', () => {
     assert.equal(response.body.chassis, '9FBBSRADDKM123456');
     assert.equal(response.body.source, 'manual');
     assert.equal(response.body.mileageKm, 85000);
-    for (const removed of ['soat', 'rtm', 'soatExpiresOn', 'rtmExpiresOn', 'runtStatus']) assert.equal(response.body[removed], undefined, removed);
+    for (const removed of ['soat', 'rtm', 'soatExpiresOn', 'rtmExpiresOn', 'runtStatus'])
+      assert.equal(response.body[removed], undefined, removed);
     assert.equal(response.body.userId, undefined);
     assert.equal(response.body.id, undefined);
   });
 
   it('una moto ABC-12D con datos mínimos', async () => {
-    const response = await ctx.request('POST', '/garage', { token: ana, body: { plate: 'xyz12d', brand: 'Yamaha', model: 'NMAX' } });
+    const response = await ctx.request('POST', '/garage', {
+      token: ana,
+      body: { plate: 'xyz12d', brand: 'Yamaha', model: 'NMAX' }
+    });
     assert.equal(response.status, 201);
     assert.equal(response.body.plate, 'XYZ-12D');
     assert.equal(response.body.kind, 'moto');
@@ -70,18 +74,30 @@ describe('Garaje /garage', () => {
     assert.equal(badData.status, 400);
     assert.deepEqual(badData.body.errors.map((error: { field: string }) => error.field).sort(), ['fuelType', 'year']);
 
-    const badMileage = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-115', mileageKm: -1 } });
+    const badMileage = await ctx.request('POST', '/garage', {
+      token: ana,
+      body: { ...sandero, plate: 'QWE-115', mileageKm: -1 }
+    });
     assert.equal(badMileage.status, 400);
     assert.equal(badMileage.body.errors[0].field, 'mileageKm');
 
-    const withOwner = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-112', ownerDocument: 'CC 123' } });
+    const withOwner = await ctx.request('POST', '/garage', {
+      token: ana,
+      body: { ...sandero, plate: 'QWE-112', ownerDocument: 'CC 123' }
+    });
     assert.equal(withOwner.status, 400);
     assert.deepEqual(withOwner.body.errors, [{ field: 'ownerDocument', message: 'Este campo no está permitido.' }]);
 
-    const runtSource = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-113', source: 'runt' } });
+    const runtSource = await ctx.request('POST', '/garage', {
+      token: ana,
+      body: { ...sandero, plate: 'QWE-113', source: 'runt' }
+    });
     assert.equal(runtSource.status, 400);
 
-    const withSoat = await ctx.request('POST', '/garage', { token: ana, body: { ...sandero, plate: 'QWE-114', soatExpiresOn: '2027-06-30' } });
+    const withSoat = await ctx.request('POST', '/garage', {
+      token: ana,
+      body: { ...sandero, plate: 'QWE-114', soatExpiresOn: '2027-06-30' }
+    });
     assert.equal(withSoat.status, 400);
   });
 
@@ -93,18 +109,27 @@ describe('Garaje /garage', () => {
 
   it('lista, consulta (aceptando la placa sin normalizar) y edita', async () => {
     const list = await ctx.request('GET', '/garage', { token: ana });
-    assert.deepEqual(list.body.vehicles.map((vehicle: { plate: string }) => vehicle.plate), ['ABC-123', 'XYZ-12D']);
+    assert.deepEqual(
+      list.body.vehicles.map((vehicle: { plate: string }) => vehicle.plate),
+      ['ABC-123', 'XYZ-12D']
+    );
 
     assert.equal((await ctx.request('GET', '/garage/abc123', { token: ana })).body.model, 'Sandero');
 
-    const patched = await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { color: 'Rojo', chassis: null, mileageKm: 90000 } });
+    const patched = await ctx.request('PATCH', '/garage/ABC-123', {
+      token: ana,
+      body: { color: 'Rojo', chassis: null, mileageKm: 90000 }
+    });
     assert.equal(patched.status, 200);
     assert.equal(patched.body.color, 'Rojo');
     assert.equal(patched.body.chassis, null);
     assert.equal(patched.body.mileageKm, 90000);
 
     assert.equal((await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: {} })).status, 400);
-    assert.equal((await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { plate: 'ZZZ-999' } })).status, 400);
+    assert.equal(
+      (await ctx.request('PATCH', '/garage/ABC-123', { token: ana, body: { plate: 'ZZZ-999' } })).status,
+      400
+    );
   });
 
   it('cada usuario solo ve su garaje: la placa de otro responde 404', async () => {
@@ -123,7 +148,10 @@ describe('Garaje /garage', () => {
 
   it('las rutas retiradas ya no existen', async () => {
     assert.equal((await ctx.request('GET', '/garage/ABC-123/assessment', { token: ana })).status, 404);
-    assert.equal((await ctx.request('POST', '/garage/ABC-123/refresh-from-runt', { token: ana, body: {} })).status, 404);
+    assert.equal(
+      (await ctx.request('POST', '/garage/ABC-123/refresh-from-runt', { token: ana, body: {} })).status,
+      404
+    );
   });
 
   it('elimina un vehículo', async () => {
@@ -136,7 +164,13 @@ describe('Garaje /garage', () => {
     const token = await ctx.registerVerified('flota@example.com');
     const user = (await ctx.users.findByEmail('flota@example.com'))!;
     for (let index = 0; index < MAX_VEHICLES_PER_USER; index++) {
-      await ctx.garage.create(user.id, { ...sandero, plate: `FLT-${String(index).padStart(3, '0')}`, fuelType: 'Gasolina', serviceType: 'Particular', source: 'manual' });
+      await ctx.garage.create(user.id, {
+        ...sandero,
+        plate: `FLT-${String(index).padStart(3, '0')}`,
+        fuelType: 'Gasolina',
+        serviceType: 'Particular',
+        source: 'manual'
+      });
     }
     const response = await ctx.request('POST', '/garage', { token, body: { ...sandero, plate: 'FLT-999' } });
     assert.equal(response.status, 409);
@@ -146,7 +180,10 @@ describe('Garaje /garage', () => {
   it('borrar la cuenta elimina sus vehículos', async () => {
     const user = (await ctx.users.findByEmail('ana.garaje@example.com'))!;
     assert.ok((await ctx.garage.count(user.id)) > 0);
-    assert.equal((await ctx.request('DELETE', '/auth/me', { token: ana, body: { password: DEFAULT_CLAVE } })).status, 204);
+    assert.equal(
+      (await ctx.request('DELETE', '/auth/me', { token: ana, body: { password: DEFAULT_CLAVE } })).status,
+      204
+    );
     assert.equal(await ctx.garage.count(user.id), 0);
   });
 });

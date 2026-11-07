@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { FORGOT_PASSWORD_MESSAGE } from '../src/controllers/authController.js';
-import { hashResetToken, INVALID_CREDENTIALS, INVALID_RESET_TOKEN, RESET_TOKEN_TTL_MS } from '../src/services/authService.js';
+import {
+  hashOneTimeToken,
+  INVALID_CREDENTIALS,
+  INVALID_RESET_TOKEN,
+  RESET_TOKEN_TTL_MS
+} from '../src/services/authService.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
 describe('Registro', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp(); });
+  before(async () => {
+    ctx = await startTestApp();
+  });
   after(() => ctx.close());
 
   it('crea la cuenta, normaliza el correo y entrega access token y cookie de refresh', async () => {
@@ -113,8 +120,10 @@ describe('Recuperación de contraseña', () => {
   after(() => ctx.close());
 
   const forgot = (email: string) => ctx.request('POST', '/auth/forgot-password', { body: { email } });
-  const reset = (token: string, password: string) => ctx.request('POST', '/auth/reset-password', { body: { token, password } });
-  const login = (password: string) => ctx.request('POST', '/auth/login', { body: { email: 'maria@example.com', password } });
+  const reset = (token: string, password: string) =>
+    ctx.request('POST', '/auth/reset-password', { body: { token, password } });
+  const login = (password: string) =>
+    ctx.request('POST', '/auth/login', { body: { email: 'maria@example.com', password } });
 
   it('responde lo mismo exista o no el correo, y solo envía correo si existe', async () => {
     const sentBefore = ctx.mailer.sent.length;
@@ -137,7 +146,7 @@ describe('Recuperación de contraseña', () => {
 
     const token = ctx.mailer.lastToken();
     const stored = ctx.resetTokens.tokens.at(-1)!;
-    assert.equal(stored.tokenHash, hashResetToken(token));
+    assert.equal(stored.tokenHash, hashOneTimeToken(token));
     assert.ok(!ctx.resetTokens.tokens.some((row) => row.tokenHash === token));
     assert.equal(stored.expiresAt.getTime() - ctx.clock.now.getTime(), RESET_TOKEN_TTL_MS);
   });
@@ -204,7 +213,9 @@ describe('Recuperación de contraseña', () => {
 
 describe('Rate limit', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ rateLimits: { loginMax: 2, forgotPasswordMax: 1, resetPasswordMax: 1 } }); });
+  before(async () => {
+    ctx = await startTestApp({ rateLimits: { loginMax: 2, forgotPasswordMax: 1, resetPasswordMax: 1 } });
+  });
   after(() => ctx.close());
 
   it('limita los intentos de login', async () => {

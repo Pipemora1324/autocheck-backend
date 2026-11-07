@@ -2,7 +2,11 @@ import { Router, type RequestHandler } from 'express';
 import type { AuthController } from '../controllers/authController.js';
 import type { AuthRateLimits } from '../middleware/rateLimit.js';
 
-export function createAuthRoutes(controller: AuthController, authenticate: RequestHandler, limits: AuthRateLimits): Router {
+export function createAuthRoutes(
+  controller: AuthController,
+  authenticate: RequestHandler,
+  limits: AuthRateLimits
+): Router {
   const router = Router();
 
   router.post('/auth/register', limits.register, controller.register);
@@ -12,7 +16,12 @@ export function createAuthRoutes(controller: AuthController, authenticate: Reque
   router.post('/auth/forgot-password', limits.forgotPassword, limits.forgotPasswordByEmail, controller.forgotPassword);
   router.post('/auth/reset-password', limits.resetPassword, controller.resetPassword);
   router.post('/auth/verify-email', limits.verifyEmail, controller.verifyEmail);
-  router.post('/auth/resend-verification', limits.resendVerification, limits.resendVerificationByEmail, controller.resendVerification);
+  router.post(
+    '/auth/resend-verification',
+    limits.resendVerification,
+    limits.resendVerificationByEmail,
+    controller.resendVerification
+  );
   router.get('/auth/me', authenticate, controller.me);
   router.delete('/auth/me', authenticate, limits.deleteAccount, controller.deleteAccount);
 

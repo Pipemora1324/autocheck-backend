@@ -5,7 +5,14 @@ import { findTelltale, type Telltale } from '../src/data/telltales.js';
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
 import { errorHandler } from '../src/middleware/errorHandler.js';
 import { requestLogger, sanitizeUrlForLog } from '../src/middleware/requestLogger.js';
-import { composeFromCatalog, DIAGNOSIS_DISCLAIMER, DIAGNOSIS_PROVIDER_BUSY_MESSAGE, DIAGNOSIS_PROVIDER_ERROR_MESSAGE, NEVER_DRIVE_ACTION, SAFETY_SYSTEM_ACTION } from '../src/services/diagnosisService.js';
+import {
+  composeFromCatalog,
+  DIAGNOSIS_DISCLAIMER,
+  DIAGNOSIS_PROVIDER_BUSY_MESSAGE,
+  DIAGNOSIS_PROVIDER_ERROR_MESSAGE,
+  NEVER_DRIVE_ACTION,
+  SAFETY_SYSTEM_ACTION
+} from '../src/services/diagnosisService.js';
 import { GeminiClient } from '../src/services/geminiClient.js';
 import { createTelltaleIdentifier, TELLTALE_RESPONSE_SCHEMA } from '../src/services/geminiTelltaleIdentifier.js';
 import { FakeGemini, modelTelltale, PROVIDER_DETAIL, reading } from './support/fakeGemini.js';
@@ -25,7 +32,10 @@ const quietConsole = () => {
 };
 
 const addVehicle = (ctx: TestContext, token: string, plate = PLATE, extra: Record<string, unknown> = {}) =>
-  ctx.request('POST', '/garage', { token, body: { plate, brand: 'Renault', model: 'Sandero', year: 2019, fuelType: 'Gasolina', ...extra } });
+  ctx.request('POST', '/garage', {
+    token,
+    body: { plate, brand: 'Renault', model: 'Sandero', year: 2019, fuelType: 'Gasolina', ...extra }
+  });
 
 describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
   let ctx: TestContext;
@@ -50,18 +60,33 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
   it('exige sesión y correo verificado', async () => {
     assert.equal((await ctx.postForm(`/garage/${PLATE}/diagnoses`, { fields: { description: 'x' } })).status, 401);
     const unverified = (await ctx.register('diag.sinverificar@example.com')).body.accessToken;
-    const response = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: unverified, fields: { description: 'x' } });
+    const response = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+      token: unverified,
+      fields: { description: 'x' }
+    });
     assert.equal(response.status, 403);
     assert.equal(response.body.code, EMAIL_NOT_VERIFIED);
     assert.equal(gemini.calls.length, 0);
   });
 
   it('varios testigos: los más graves primero, con la explicación de la IA y la urgencia general del peor', async () => {
-    gemini.answer(reading([
-      modelTelltale({ nombre: 'Cinturón', categoria: 'informativo', urgencia: 'informativo', color: 'rojo' }),
-      modelTelltale({ nombre: 'Motor', significado: 'Texto de la IA.', notaDelVehiculo: 'En el Sandero queda a la izquierda.' }),
-      modelTelltale({ nombre: 'Aceite', categoria: 'aceite', urgencia: 'amarillo', color: 'desconocido', confianza: 0.2 })
-    ]));
+    gemini.answer(
+      reading([
+        modelTelltale({ nombre: 'Cinturón', categoria: 'informativo', urgencia: 'informativo', color: 'rojo' }),
+        modelTelltale({
+          nombre: 'Motor',
+          significado: 'Texto de la IA.',
+          notaDelVehiculo: 'En el Sandero queda a la izquierda.'
+        }),
+        modelTelltale({
+          nombre: 'Aceite',
+          categoria: 'aceite',
+          urgencia: 'amarillo',
+          color: 'desconocido',
+          confianza: 0.2
+        })
+      ])
+    );
     const response = await diagnose({ description: 'varias luces' }, JPEG);
     assert.equal(response.status, 201);
     assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -71,13 +96,18 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
     assert.equal(response.body.debeDetenerse, true);
     assert.equal(response.body.accionGeneral, NEVER_DRIVE_ACTION);
     assert.equal(response.body.aviso, DIAGNOSIS_DISCLAIMER);
-    assert.deepEqual(response.body.testigos.map((item: { nombre: string }) => item.nombre), ['Aceite', 'Motor', 'Cinturón']);
+    assert.deepEqual(
+      response.body.testigos.map((item: { nombre: string }) => item.nombre),
+      ['Aceite', 'Motor', 'Cinturón']
+    );
     assert.equal(response.body.testigos[1].significado, 'Texto de la IA.');
     assert.equal(response.body.testigos[1].notaDelVehiculo, 'En el Sandero queda a la izquierda.');
   });
 
   it('una foto iluminada de rojo con un color que no coincide ya no se rechaza', async () => {
-    gemini.answer(reading([modelTelltale({ nombre: 'ABS', categoria: 'estabilidad_abs', urgencia: 'amarillo', color: 'rojo' })]));
+    gemini.answer(
+      reading([modelTelltale({ nombre: 'ABS', categoria: 'estabilidad_abs', urgencia: 'amarillo', color: 'rojo' })])
+    );
     const response = await diagnose({}, JPEG);
     assert.equal(response.status, 201);
     assert.equal(response.body.testigos[0].nombre, 'ABS');
@@ -98,8 +128,16 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
     const body = gemini.calls[0];
     const prompt: string = body.input[0].text;
     assert.equal(body.model, 'modelo-de-prueba');
-    assert.deepEqual(body.response_format, { type: 'text', mime_type: 'application/json', schema: TELLTALE_RESPONSE_SCHEMA });
-    assert.deepEqual(body.input[1], { type: 'image', data: Buffer.from(JPEG).toString('base64'), mime_type: 'image/jpeg' });
+    assert.deepEqual(body.response_format, {
+      type: 'text',
+      mime_type: 'application/json',
+      schema: TELLTALE_RESPONSE_SCHEMA
+    });
+    assert.deepEqual(body.input[1], {
+      type: 'image',
+      data: Buffer.from(JPEG).toString('base64'),
+      mime_type: 'image/jpeg'
+    });
     assert.match(prompt, /"marca":"Renault"/);
     assert.match(prompt, /"linea":"Sandero"/);
     assert.match(prompt, /"anio":2019/);
@@ -120,8 +158,13 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
   });
 
   it('el freno de mano con el freno liberado, según el usuario, se trata como frenos', async () => {
-    gemini.answer(reading([modelTelltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'informativo' })]));
-    assert.equal((await diagnose({ description: 'lo acabo de poner al parquear' }, JPEG)).body.urgenciaGeneral, 'informativo');
+    gemini.answer(
+      reading([modelTelltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'informativo' })])
+    );
+    assert.equal(
+      (await diagnose({ description: 'lo acabo de poner al parquear' }, JPEG)).body.urgenciaGeneral,
+      'informativo'
+    );
     const response = await diagnose({ description: 'ya solté el freno de mano y sigue prendido' }, JPEG);
     assert.equal(response.body.urgenciaGeneral, 'rojo');
     assert.equal(response.body.testigos[0].categoria, 'frenos');
@@ -144,7 +187,9 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
   });
 
   it('un valor fuera de lista no invalida la foto, y el piso de seguridad sigue decidiendo', async () => {
-    gemini.answer(reading([modelTelltale({ categoria: 'frenos', urgencia: 'tranquilo', color: 'morado', confianza: 3 })]));
+    gemini.answer(
+      reading([modelTelltale({ categoria: 'frenos', urgencia: 'tranquilo', color: 'morado', confianza: 3 })])
+    );
     const response = await diagnose({}, JPEG);
     assert.equal(response.status, 201);
     assert.equal(response.body.testigos[0].urgencia, 'rojo');
@@ -152,7 +197,9 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
   });
 
   it('el mensaje general que sugiere seguir manejando se descarta', async () => {
-    gemini.answer(reading([modelTelltale({ categoria: 'aceite' })], { mensajeGeneral: 'Puedes seguir manejando hasta tu casa.' }));
+    gemini.answer(
+      reading([modelTelltale({ categoria: 'aceite' })], { mensajeGeneral: 'Puedes seguir manejando hasta tu casa.' })
+    );
     assert.equal((await diagnose({}, JPEG)).body.mensajeGeneral, '');
   });
 
@@ -206,7 +253,11 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
 
     it('una salida inválida o un 400 son provider_error, nunca "toma otra foto"', async () => {
       try {
-        for (const output of ['esto no es JSON', JSON.stringify({ testigos: 'no es una lista' }), JSON.stringify({ mensajeGeneral: 'sin testigos' })]) {
+        for (const output of [
+          'esto no es JSON',
+          JSON.stringify({ testigos: 'no es una lista' }),
+          JSON.stringify({ mensajeGeneral: 'sin testigos' })
+        ]) {
           gemini.status = 200;
           gemini.output = output;
           const response = await diagnose({}, JPEG);
@@ -302,11 +353,15 @@ describe('POST /garage/:plate/diagnoses con IA (Gemini simulado)', () => {
 });
 
 describe('Reintentos del cliente de Gemini', () => {
-  const ok = () => new Response(JSON.stringify({ steps: [{ type: 'model_output', content: [{ type: 'text', text: '{"a":1}' }] }] }), { status: 200 });
-  const fail = (status: number) => new Response(JSON.stringify({ error: { status: 'service_unavailable', message: PROVIDER_DETAIL } }), { status });
+  const ok = () =>
+    new Response(JSON.stringify({ steps: [{ type: 'model_output', content: [{ type: 'text', text: '{"a":1}' }] }] }), {
+      status: 200
+    });
+  const fail = (status: number) =>
+    new Response(JSON.stringify({ error: { status: 'service_unavailable', message: PROVIDER_DETAIL } }), { status });
   const client = (responses: Array<() => Response>) => {
     const state = { calls: 0 };
-    const fetchImpl = (async () => responses[state.calls++]!()) as unknown as typeof fetch;
+    const fetchImpl = (async () => responses[state.calls++]()) as unknown as typeof fetch;
     return { state, gemini: new GeminiClient({ apiKey: 'x', model: 'm', fetchImpl, retryDelaysMs: [0, 0] }) };
   };
 
@@ -366,10 +421,17 @@ describe('Elección manual del testigo (sin IA)', () => {
     offToken = await off.registerVerified('sinia@example.com');
     await addVehicle(off, offToken);
   });
-  after(async () => { await ctx.close(); await off.close(); });
+  after(async () => {
+    await ctx.close();
+    await off.close();
+  });
 
   it('no llama a la IA, aunque también lleguen foto y descripción, y la explicación sale del catálogo', async () => {
-    const response = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'tpms', description: 'una llanta baja' }, image: JPEG });
+    const response = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+      token,
+      fields: { telltaleId: 'tpms', description: 'una llanta baja' },
+      image: JPEG
+    });
     const telltale = findTelltale('tpms')!;
     assert.equal(response.status, 201);
     assert.equal(response.body.origen, 'manual');
@@ -382,7 +444,10 @@ describe('Elección manual del testigo (sin IA)', () => {
   });
 
   it('también acepta JSON, y neverDrive se aplica igual', async () => {
-    const response = await ctx.request('POST', `/garage/${PLATE}/diagnoses`, { token, body: { telltaleId: 'presion_aceite' } });
+    const response = await ctx.request('POST', `/garage/${PLATE}/diagnoses`, {
+      token,
+      body: { telltaleId: 'presion_aceite' }
+    });
     assert.equal(response.status, 201);
     assert.equal(response.body.urgenciaGeneral, 'rojo');
     assert.equal(response.body.debeDetenerse, true);
@@ -390,11 +455,20 @@ describe('Elección manual del testigo (sin IA)', () => {
   });
 
   it('el parpadeo que indica el usuario también sube el check engine elegido de la lista', async () => {
-    const fixed = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'check_engine', parpadea: 'false' } });
+    const fixed = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+      token,
+      fields: { telltaleId: 'check_engine', parpadea: 'false' }
+    });
     assert.equal(fixed.body.urgenciaGeneral, 'amarillo');
-    const blinking = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'check_engine', parpadea: 'true' } });
+    const blinking = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+      token,
+      fields: { telltaleId: 'check_engine', parpadea: 'true' }
+    });
     assert.equal(blinking.body.urgenciaGeneral, 'rojo');
-    assert.equal(blinking.body.testigos[0].cuandoIrAlMecanico, findTelltale('check_engine')!.siParpadea!.cuandoIrAlMecanico);
+    assert.equal(
+      blinking.body.testigos[0].cuandoIrAlMecanico,
+      findTelltale('check_engine')!.siParpadea!.cuandoIrAlMecanico
+    );
   });
 
   it('rechaza un testigo que no está en el catálogo', async () => {
@@ -410,7 +484,10 @@ describe('Elección manual del testigo (sin IA)', () => {
       assert.equal(response.body.code, 'AI_NOT_CONFIGURED');
       assert.match(response.body.message, /Elige el testigo de la lista/);
     }
-    const manual = await off.postForm(`/garage/${PLATE}/diagnoses`, { token: offToken, fields: { telltaleId: 'airbag' } });
+    const manual = await off.postForm(`/garage/${PLATE}/diagnoses`, {
+      token: offToken,
+      fields: { telltaleId: 'airbag' }
+    });
     assert.equal(manual.status, 201);
     assert.equal(manual.body.urgenciaGeneral, 'rojo');
     assert.equal(manual.body.debeDetenerse, false);
@@ -427,7 +504,10 @@ describe('Elección manual del testigo (sin IA)', () => {
 
 describe('Límites de diagnósticos por hora', () => {
   // Sin valor explícito se aplican los límites por defecto de la aplicación.
-  const DEFAULTS = { aiDiagnosesPerHour: undefined as unknown as number, manualDiagnosesPerHour: undefined as unknown as number };
+  const DEFAULTS = {
+    aiDiagnosesPerHour: undefined as unknown as number,
+    manualDiagnosesPerHour: undefined as unknown as number
+  };
   let ctx: TestContext;
   let gemini: FakeGemini;
 
@@ -436,8 +516,10 @@ describe('Límites de diagnósticos por hora', () => {
     await addVehicle(ctx, token);
     return token;
   };
-  const withAi = (token: string) => ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { description: 'luz naranja' } });
-  const manual = (token: string) => ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'cinturon' } });
+  const withAi = (token: string) =>
+    ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { description: 'luz naranja' } });
+  const manual = (token: string) =>
+    ctx.postForm(`/garage/${PLATE}/diagnoses`, { token, fields: { telltaleId: 'cinturon' } });
 
   before(async () => {
     gemini = new FakeGemini();
@@ -478,7 +560,10 @@ describe('Límites de diagnósticos por hora', () => {
     const ana = await user('limite.lectura@example.com');
     const created = await manual(ana);
     for (let attempt = 0; attempt < 80; attempt++) {
-      assert.equal((await ctx.request('GET', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status, 200);
+      assert.equal(
+        (await ctx.request('GET', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status,
+        200
+      );
     }
     assert.equal((await ctx.request('GET', `/garage/${PLATE}/diagnoses`, { token: ana })).status, 200);
     assert.equal((await manual(ana)).status, 201);
@@ -487,7 +572,10 @@ describe('Límites de diagnósticos por hora', () => {
   it('una solicitud rechazada antes de llamar a la IA no gasta su cupo', async () => {
     const ana = await user('limite.rechazos@example.com');
     for (let attempt = 0; attempt < 16; attempt++) {
-      const invalid = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, image: new TextEncoder().encode('no es una imagen') });
+      const invalid = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+        token: ana,
+        image: new TextEncoder().encode('no es una imagen')
+      });
       assert.equal(invalid.status, 415);
     }
     assert.equal((await withAi(ana)).status, 201);
@@ -513,11 +601,15 @@ describe('Límites de diagnósticos por hora', () => {
   });
 
   it('el tope de subidas acota las solicitudes aunque se rechacen después', async () => {
-    const capped = await startTestApp({ telltaleIdentifier: new FakeGemini().identifier, rateLimits: { aiDiagnosesPerHour: 1, manualDiagnosesPerHour: 1 } });
+    const capped = await startTestApp({
+      telltaleIdentifier: new FakeGemini().identifier,
+      rateLimits: { aiDiagnosesPerHour: 1, manualDiagnosesPerHour: 1 }
+    });
     try {
       const token = await capped.registerVerified('limite.tope@example.com');
       await addVehicle(capped, token);
-      const invalid = () => capped.postForm(`/garage/${PLATE}/diagnoses`, { token, image: new TextEncoder().encode('no es una imagen') });
+      const invalid = () =>
+        capped.postForm(`/garage/${PLATE}/diagnoses`, { token, image: new TextEncoder().encode('no es una imagen') });
       assert.equal((await invalid()).status, 415);
       assert.equal((await invalid()).status, 415);
       const limited = await invalid();
@@ -529,7 +621,10 @@ describe('Límites de diagnósticos por hora', () => {
   });
 
   it('sin IA configurada, los intentos con IA responden 503 sin gastar ningún cupo de la IA', async () => {
-    const off = await startTestApp({ telltaleIdentifier: null, rateLimits: { aiDiagnosesPerHour: 1, manualDiagnosesPerHour: 100 } });
+    const off = await startTestApp({
+      telltaleIdentifier: null,
+      rateLimits: { aiDiagnosesPerHour: 1, manualDiagnosesPerHour: 100 }
+    });
     try {
       const token = await off.registerVerified('limite.sinia@example.com');
       await addVehicle(off, token);
@@ -549,7 +644,10 @@ describe('Historial de diagnósticos y aislamiento', () => {
   let ana: string;
   let luis: string;
   const manual = (token: string, telltaleId: string, plate = PLATE, description?: string) =>
-    ctx.postForm(`/garage/${plate}/diagnoses`, { token, fields: { telltaleId, ...(description ? { description } : {}) } });
+    ctx.postForm(`/garage/${plate}/diagnoses`, {
+      token,
+      fields: { telltaleId, ...(description ? { description } : {}) }
+    });
 
   before(async () => {
     ctx = await startTestApp();
@@ -562,13 +660,30 @@ describe('Historial de diagnósticos y aislamiento', () => {
   after(() => ctx.close());
 
   it('guarda lo acordado y nada de la imagen', async () => {
-    const created = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, fields: { telltaleId: 'abs', description: 'al frenar' }, image: JPEG });
+    const created = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+      token: ana,
+      fields: { telltaleId: 'abs', description: 'al frenar' },
+      image: JPEG
+    });
     const stored = ctx.diagnoses.diagnoses.find((item) => item.id === created.body.id)!;
-    assert.deepEqual(Object.keys(stored).sort(), ['confianza', 'createdAt', 'descripcion', 'id', 'resultado', 'severidad', 'telltaleId', 'userId', 'vehicleId']);
+    assert.deepEqual(Object.keys(stored).sort(), [
+      'confianza',
+      'createdAt',
+      'descripcion',
+      'id',
+      'resultado',
+      'severidad',
+      'telltaleId',
+      'userId',
+      'vehicleId'
+    ]);
     assert.equal(stored.descripcion, 'al frenar');
     assert.equal(stored.severidad, 'amarillo');
     assert.equal(stored.confianza, null);
-    assert.doesNotMatch(JSON.stringify(stored), new RegExp(Buffer.from(JPEG).toString('base64').replace(/[+/=]/g, '.')));
+    assert.doesNotMatch(
+      JSON.stringify(stored),
+      new RegExp(Buffer.from(JPEG).toString('base64').replace(/[+/=]/g, '.'))
+    );
   });
 
   it('lista paginada, del más reciente al más antiguo y solo de ese vehículo', async () => {
@@ -581,7 +696,10 @@ describe('Historial de diagnósticos y aislamiento', () => {
     assert.equal(firstPage.headers.get('cache-control'), 'no-store');
     assert.equal(firstPage.body.total, 3);
     assert.equal(firstPage.body.totalPages, 2);
-    assert.deepEqual(firstPage.body.items.map((item: { telltaleId: string }) => item.telltaleId), ['cinturon', 'tpms']);
+    assert.deepEqual(
+      firstPage.body.items.map((item: { telltaleId: string }) => item.telltaleId),
+      ['cinturon', 'tpms']
+    );
     assert.equal(firstPage.body.items[0].nombre, 'Cinturón sin abrochar');
     assert.equal(firstPage.body.items[0].totalTestigos, 1);
     assert.equal(firstPage.body.items[0].origen, 'manual');
@@ -589,10 +707,17 @@ describe('Historial de diagnósticos y aislamiento', () => {
     assert.equal(firstPage.body.items[0].resultado, undefined);
 
     const secondPage = await ctx.request('GET', `/garage/${PLATE}/diagnoses?limit=2&page=2`, { token: ana });
-    assert.deepEqual(secondPage.body.items.map((item: { telltaleId: string }) => item.telltaleId), ['abs']);
+    assert.deepEqual(
+      secondPage.body.items.map((item: { telltaleId: string }) => item.telltaleId),
+      ['abs']
+    );
 
     for (const query of ['limit=0', 'limit=51', 'page=0', 'page=dos']) {
-      assert.equal((await ctx.request('GET', `/garage/${PLATE}/diagnoses?${query}`, { token: ana })).status, 400, query);
+      assert.equal(
+        (await ctx.request('GET', `/garage/${PLATE}/diagnoses?${query}`, { token: ana })).status,
+        400,
+        query
+      );
     }
   });
 
@@ -603,19 +728,34 @@ describe('Historial de diagnósticos y aislamiento', () => {
     const luisHistory = await ctx.request('GET', `/garage/${PLATE}/diagnoses`, { token: luis });
     assert.equal(luisHistory.status, 200);
     assert.deepEqual(luisHistory.body.items, []);
-    assert.equal((await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: luis })).status, 404);
+    assert.equal(
+      (await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: luis })).status,
+      404
+    );
 
     assert.equal((await ctx.request('GET', '/garage/XYZ-789/diagnoses', { token: luis })).status, 404);
     assert.equal((await manual(luis, 'tpms', 'XYZ-789')).status, 404);
-    assert.equal((await ctx.request('DELETE', `/garage/XYZ-789/diagnoses/${created.body.id}`, { token: luis })).status, 404);
+    assert.equal(
+      (await ctx.request('DELETE', `/garage/XYZ-789/diagnoses/${created.body.id}`, { token: luis })).status,
+      404
+    );
   });
 
   it('borra un diagnóstico; un id ajeno a ese vehículo o inválido no borra nada', async () => {
     const created = await manual(ana, 'crucero');
-    assert.equal((await ctx.request('DELETE', `/garage/XYZ-789/diagnoses/${created.body.id}`, { token: ana })).status, 404);
+    assert.equal(
+      (await ctx.request('DELETE', `/garage/XYZ-789/diagnoses/${created.body.id}`, { token: ana })).status,
+      404
+    );
     assert.equal((await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/no-es-un-uuid`, { token: ana })).status, 400);
-    assert.equal((await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status, 204);
-    assert.equal((await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status, 404);
+    assert.equal(
+      (await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status,
+      204
+    );
+    assert.equal(
+      (await ctx.request('DELETE', `/garage/${PLATE}/diagnoses/${created.body.id}`, { token: ana })).status,
+      404
+    );
   });
 
   it('borrar el vehículo elimina su historial', async () => {
@@ -632,7 +772,10 @@ describe('Historial de diagnósticos y aislamiento', () => {
     const other = (await ctx.users.findByEmail('historial.luis@example.com'))!;
     await manual(luis, 'tpms');
 
-    assert.equal((await ctx.request('DELETE', '/auth/me', { token: ana, body: { password: DEFAULT_CLAVE } })).status, 204);
+    assert.equal(
+      (await ctx.request('DELETE', '/auth/me', { token: ana, body: { password: DEFAULT_CLAVE } })).status,
+      204
+    );
     assert.equal(await ctx.garage.count(user.id), 0);
     assert.ok(!ctx.diagnoses.diagnoses.some((item) => item.userId === user.id));
     assert.ok(ctx.diagnoses.diagnoses.some((item) => item.userId === other.id));
@@ -647,7 +790,8 @@ describe('GET /garage/:plate/diagnoses/:id', () => {
 
   const manual = (telltaleId: string, fields: Record<string, string> = {}) =>
     ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, fields: { telltaleId, ...fields } });
-  const detail = (id: string, token = ana, plate = PLATE) => ctx.request('GET', `/garage/${plate}/diagnoses/${id}`, { token });
+  const detail = (id: string, token = ana, plate = PLATE) =>
+    ctx.request('GET', `/garage/${plate}/diagnoses/${id}`, { token });
 
   before(async () => {
     gemini = new FakeGemini();
@@ -661,8 +805,17 @@ describe('GET /garage/:plate/diagnoses/:id', () => {
   after(() => ctx.close());
 
   it('devuelve lo que explicó la IA, sin crear otra entrada ni volver a llamarla', async () => {
-    gemini.answer(reading([modelTelltale({ nombre: 'Motor', significado: 'Explicación de la IA guardada.' }), modelTelltale({ nombre: 'Frenos', categoria: 'frenos' })]));
-    const created = await ctx.postForm(`/garage/${PLATE}/diagnoses`, { token: ana, fields: { description: 'dos luces' }, image: JPEG });
+    gemini.answer(
+      reading([
+        modelTelltale({ nombre: 'Motor', significado: 'Explicación de la IA guardada.' }),
+        modelTelltale({ nombre: 'Frenos', categoria: 'frenos' })
+      ])
+    );
+    const created = await ctx.postForm(`/garage/${PLATE}/diagnoses`, {
+      token: ana,
+      fields: { description: 'dos luces' },
+      image: JPEG
+    });
     const stored = ctx.diagnoses.diagnoses.length;
     gemini.calls.length = 0;
 
@@ -732,7 +885,8 @@ describe('composeFromCatalog', () => {
   });
 
   it('un combustible desconocido no genera aviso de compatibilidad', () => {
-    for (const fuelType of [null, 'Otro'] as const) assert.equal(composeFromCatalog(findTelltale('adblue')!, { fuelType }).notaDelVehiculo, null);
+    for (const fuelType of [null, 'Otro'] as const)
+      assert.equal(composeFromCatalog(findTelltale('adblue')!, { fuelType }).notaDelVehiculo, null);
     const oil = composeFromCatalog(findTelltale('presion_aceite')!, { fuelType: 'Eléctrico' });
     assert.match(oil.notaDelVehiculo!, /eléctricos/);
     assert.equal(oil.urgencia, 'rojo');
@@ -746,7 +900,10 @@ describe('Privacidad en GET /config/public', () => {
     on = await startTestApp({ telltaleIdentifier: new FakeGemini().identifier });
     off = await startTestApp({ telltaleIdentifier: null });
   });
-  after(async () => { await on.close(); await off.close(); });
+  after(async () => {
+    await on.close();
+    await off.close();
+  });
 
   it('avisa que la foto y el chat van a un proveedor externo, qué se guarda y cuándo se borra', async () => {
     const { body } = await on.request('GET', '/config/public');
@@ -785,17 +942,27 @@ describe('Logs sin datos sensibles', () => {
     const { default: express } = await import('express');
     const app = express();
     app.use(requestLogger(true, { write: (line) => lines.push(line) }));
-    app.get('/garage/:plate/diagnoses', (_request, response) => { response.json({}); });
+    app.get('/garage/:plate/diagnoses', (_request, response) => {
+      response.json({});
+    });
     const server = await new Promise<import('node:http').Server>((resolve) => {
-      const listening = app.listen(0, () => resolve(listening));
+      const listening = app.listen(0, () => {
+        resolve(listening);
+      });
     });
     const { port } = server.address() as import('node:net').AddressInfo;
-    await fetch(`http://127.0.0.1:${port}/garage/ABC-123/diagnoses?page=1`, { headers: { referer: 'https://app.example/garaje/ABC-123' } });
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await fetch(`http://127.0.0.1:${port}/garage/ABC-123/diagnoses?page=1`, {
+      headers: { referer: 'https://app.example/garaje/ABC-123' }
+    });
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve();
+      })
+    );
 
     assert.equal(lines.length, 1);
-    assert.match(lines[0]!, /GET \/garage\/:plate\/diagnoses 200/);
-    assert.doesNotMatch(lines[0]!, /ABC-?123/);
+    assert.match(lines[0], /GET \/garage\/:plate\/diagnoses 200/);
+    assert.doesNotMatch(lines[0], /ABC-?123/);
   });
 
   it('un error no controlado no registra el detalle de Postgres con los valores de la fila', () => {
@@ -805,7 +972,15 @@ describe('Logs sin datos sensibles', () => {
       detail: `Failing row contains (ABC-123, ${SECRET_DESCRIPTION}).`
     });
     let status = 0;
-    const response = { status(code: number) { status = code; return this; }, json() { return this; } };
+    const response = {
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json() {
+        return this;
+      }
+    };
     try {
       errorHandler(pgError, {} as never, response as never, (() => {}) as never);
     } finally {

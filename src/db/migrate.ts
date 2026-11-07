@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { errorMessage } from '../errors/httpError.js';
 import { runner } from 'node-pg-migrate';
 import { z } from 'zod';
 import { connectionOptions } from './pool.js';
@@ -6,7 +7,11 @@ import { connectionOptions } from './pool.js';
 // Funciona igual desde src/db (tsx) y desde dist/db (build): ambos están a dos niveles de la raíz.
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations', import.meta.url));
 
-export async function runMigrations(databaseUrl: string, direction: 'up' | 'down' = 'up', count?: number): Promise<void> {
+export async function runMigrations(
+  databaseUrl: string,
+  direction: 'up' | 'down' = 'up',
+  count?: number
+): Promise<void> {
   await runner({
     databaseUrl: connectionOptions(databaseUrl),
     dir: MIGRATIONS_DIR,
@@ -14,7 +19,9 @@ export async function runMigrations(databaseUrl: string, direction: 'up' | 'down
     count: count ?? (direction === 'up' ? Infinity : 1),
     migrationsTable: 'pgmigrations',
     checkOrder: true,
-    log: (message) => console.log(message)
+    log: (message) => {
+      console.log(message);
+    }
   });
 }
 
@@ -27,10 +34,11 @@ if (isEntryPoint) {
     process.exit(1);
   }
   const direction = process.argv[2] === 'down' ? 'down' : 'up';
-  runMigrations(databaseUrl.data, direction)
-    .then(() => console.log(`Migraciones (${direction}) aplicadas.`))
-    .catch((error: Error) => {
-      console.error('Error al ejecutar migraciones:', error.message);
-      process.exit(1);
-    });
+  try {
+    await runMigrations(databaseUrl.data, direction);
+    console.log(`Migraciones (${direction}) aplicadas.`);
+  } catch (error) {
+    console.error('Error al ejecutar migraciones:', errorMessage(error));
+    process.exit(1);
+  }
 }

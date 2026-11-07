@@ -43,12 +43,23 @@ export class TokenService {
   /** Devuelve null si el token es inválido, expiró o no tiene la forma esperada. */
   verifyAccessToken(token: string): AuthUser | null {
     try {
-      const decoded = jwt.verify(token, this.accessSecret, { algorithms: ['HS256'], issuer: ISSUER, audience: ACCESS_AUDIENCE });
+      const decoded = jwt.verify(token, this.accessSecret, {
+        algorithms: ['HS256'],
+        issuer: ISSUER,
+        audience: ACCESS_AUDIENCE
+      });
       const payload = accessPayloadSchema.parse(decoded);
       return { id: payload.sub, email: payload.email, role: payload.role };
     } catch {
       return null;
     }
+  }
+
+  /** Cuándo vence un token ya verificado, en milisegundos desde la época. */
+  accessTokenExpiresAt(token: string): number {
+    const decoded = jwt.decode(token);
+    const exp = typeof decoded === 'object' ? decoded?.exp : undefined;
+    return exp === undefined ? 0 : exp * 1000;
   }
 
   signRefreshToken(claims: RefreshClaims): string {
@@ -64,7 +75,11 @@ export class TokenService {
 
   verifyRefreshToken(token: string): RefreshClaims | null {
     try {
-      const decoded = jwt.verify(token, this.refreshSecret, { algorithms: ['HS256'], issuer: ISSUER, audience: REFRESH_AUDIENCE });
+      const decoded = jwt.verify(token, this.refreshSecret, {
+        algorithms: ['HS256'],
+        issuer: ISSUER,
+        audience: REFRESH_AUDIENCE
+      });
       const payload = refreshPayloadSchema.parse(decoded);
       return { userId: payload.sub, tokenId: payload.jti, familyId: payload.fam };
     } catch {

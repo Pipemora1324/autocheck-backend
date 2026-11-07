@@ -11,9 +11,10 @@ import {
   type ScanProviderName
 } from './cardScanner.js';
 
-export const SCAN_PROVIDER_BUSY_MESSAGE = 'El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano.';
+export const SCAN_PROVIDER_BUSY_MESSAGE =
+  'El servicio gratuito de lectura está ocupado. Intenta en un minuto o ingresa los datos a mano.';
 
-export interface Prefilled<T> {
+interface Prefilled<T> {
   value: T | null;
   confidence: number;
 }
@@ -36,7 +37,11 @@ export interface CardScanResult {
   next: { confirmWith: 'POST /garage'; source: 'scan' };
 }
 
-const fold = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+const fold = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
 
 const FUEL_KEYWORDS: Array<[RegExp, FuelType]> = [
   [/(gasolina.*gas|gas.*gasolina)/, 'Gasolina y gas'],
@@ -54,7 +59,8 @@ const SERVICE_KEYWORDS: Array<[RegExp, ServiceType]> = [
   [/diplomat/, 'Diplomático']
 ];
 
-const clamp = (confidence: number) => Math.round(Math.min(1, Math.max(0, Number.isFinite(confidence) ? confidence : 0)) * 100) / 100;
+const clamp = (confidence: number) =>
+  Math.round(Math.min(1, Math.max(0, Number.isFinite(confidence) ? confidence : 0)) * 100) / 100;
 
 // Convierte el texto leído al tipo del garaje; si no se puede, el dato queda vacío con confianza 0.
 const pick = <T>(raw: RawCardExtraction[keyof RawCardExtraction], parse: (text: string) => T | null): Prefilled<T> => {
@@ -99,21 +105,30 @@ export class CardScanService {
       raw = await this.reader.read({ data: image, mediaType });
     } catch (error) {
       if (error instanceof CardUnreadableError) {
-        throw new HttpError(422, 'No pudimos leer la tarjeta. Intenta con una foto más nítida, de frente y con buena luz.', { code: 'CARD_UNREADABLE' });
+        throw new HttpError(
+          422,
+          'No pudimos leer la tarjeta. Intenta con una foto más nítida, de frente y con buena luz.',
+          { code: 'CARD_UNREADABLE' }
+        );
       }
       if (error instanceof CardScannerBusyError) {
         throw serviceUnavailable(SCAN_PROVIDER_BUSY_MESSAGE, { code: 'SCAN_PROVIDER_BUSY', retryAfterSeconds: 60 });
       }
       if (error instanceof CardReaderUnavailableError) {
-        throw serviceUnavailable('La lectura automática no está disponible en este momento. Intenta más tarde o registra el vehículo manualmente.', {
-          code: 'VISION_UNAVAILABLE'
-        });
+        throw serviceUnavailable(
+          'La lectura automática no está disponible en este momento. Intenta más tarde o registra el vehículo manualmente.',
+          {
+            code: 'VISION_UNAVAILABLE'
+          }
+        );
       }
       throw error;
     }
 
     if (!raw.isVehicleDocument) {
-      throw new HttpError(422, 'La imagen no parece una licencia de tránsito (tarjeta de propiedad).', { code: 'NOT_A_VEHICLE_DOCUMENT' });
+      throw new HttpError(422, 'La imagen no parece una licencia de tránsito (tarjeta de propiedad).', {
+        code: 'NOT_A_VEHICLE_DOCUMENT'
+      });
     }
 
     const maxYear = this.currentYear() + 1;
@@ -134,12 +149,19 @@ export class CardScanService {
         const chassis = value.toUpperCase().replace(/\s+/g, '');
         return /^[A-Z0-9-]{5,30}$/.test(chassis) ? chassis : null;
       }),
-      fuelType: pick(raw.fuelType, (value) => FUEL_KEYWORDS.find(([pattern]) => pattern.test(fold(value)))?.[1] ?? null),
-      serviceType: pick(raw.serviceType, (value) => SERVICE_KEYWORDS.find(([pattern]) => pattern.test(fold(value)))?.[1] ?? null)
+      fuelType: pick(
+        raw.fuelType,
+        (value) => FUEL_KEYWORDS.find(([pattern]) => pattern.test(fold(value)))?.[1] ?? null
+      ),
+      serviceType: pick(
+        raw.serviceType,
+        (value) => SERVICE_KEYWORDS.find(([pattern]) => pattern.test(fold(value)))?.[1] ?? null
+      )
     };
 
     const warnings = raw.warnings.map((warning) => warning.slice(0, 200)).slice(0, 5);
-    if (raw.plate.value && !vehicle.plate.value) warnings.push('La placa leída no tiene un formato colombiano válido: escríbela manualmente.');
+    if (raw.plate.value && !vehicle.plate.value)
+      warnings.push('La placa leída no tiene un formato colombiano válido: escríbela manualmente.');
 
     return {
       vehicle,

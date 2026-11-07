@@ -19,14 +19,20 @@ export class FakeGemini {
   }
 
   readonly fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
-    this.calls.push(JSON.parse(String(init!.body)));
-    const body = this.status === 200
-      ? { status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: this.output }] }] }
-      : { error: { message: PROVIDER_DETAIL } };
+    this.calls.push(JSON.parse(init!.body as string));
+    const body =
+      this.status === 200
+        ? { status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: this.output }] }] }
+        : { error: { message: PROVIDER_DETAIL } };
     return new Response(JSON.stringify(body), { status: this.status, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
 
-  private readonly options = { apiKey: GEMINI_KEY, model: 'modelo-de-prueba', fetchImpl: this.fetchImpl, retryDelaysMs: [] };
+  private readonly options = {
+    apiKey: GEMINI_KEY,
+    model: 'modelo-de-prueba',
+    fetchImpl: this.fetchImpl,
+    retryDelaysMs: []
+  };
   readonly identifier = new GeminiTelltaleIdentifier(this.options);
   readonly chat = new GeminiChatResponder(this.options);
 }
@@ -49,7 +55,10 @@ export const modelTelltale = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 });
 
-export const reading = (testigos: Array<Record<string, unknown>> = [modelTelltale()], overrides: Record<string, unknown> = {}) => ({
+export const reading = (
+  testigos: Array<Record<string, unknown>> = [modelTelltale()],
+  overrides: Record<string, unknown> = {}
+) => ({
   testigos,
   mensajeGeneral: 'Se ve un testigo encendido.',
   necesitaMejorFoto: false,

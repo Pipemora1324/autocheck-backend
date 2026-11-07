@@ -111,6 +111,7 @@ describe('Socket.IO', () => {
 
       const own = client(ana, { extraHeaders: { origin: 'http://localhost:4200' }, transports: ['polling'] });
       await connected(own);
+      assert.equal(own.connected, true);
     });
 
     it(`limita a ${MAX_CONNECTIONS_PER_USER} conexiones por usuario: la nueva entra y sale la más antigua`, async () => {
@@ -414,8 +415,10 @@ describe('nonRejecting', () => {
 
 describe('Sin tiempo real', () => {
   it('noRealtime no hace nada ni falla', () => {
-    noRealtime.emit('u', 'garage:changed', { action: 'created', plate: PLATE });
-    noRealtime.disconnectUser('u');
+    assert.doesNotThrow(() => {
+      noRealtime.emit('u', 'garage:changed', { action: 'created', plate: PLATE });
+      noRealtime.disconnectUser('u');
+    });
   });
 
   it('emitir antes de unirse al servidor HTTP tampoco falla', async () => {
@@ -423,9 +426,11 @@ describe('Sin tiempo real', () => {
     const ctx = await startTestApp();
     try {
       const hub = new SocketHub({ tokens: ctx.tokens, users: ctx.users, corsOrigins: [] });
-      hub.emit('u', 'garage:changed', { action: 'created', plate: PLATE });
-      hub.disconnectUser('u');
-      await hub.close();
+      assert.doesNotThrow(() => {
+        hub.emit('u', 'garage:changed', { action: 'created', plate: PLATE });
+        hub.disconnectUser('u');
+      });
+      await assert.doesNotReject(hub.close());
     } finally {
       await ctx.close();
     }

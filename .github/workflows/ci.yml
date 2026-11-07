@@ -48,7 +48,7 @@ jobs:
         with:
           node-version-file: package.json
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck

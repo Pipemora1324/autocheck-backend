@@ -56,9 +56,18 @@ export interface SafetyContext {
   description?: string;
 }
 
-/** El usuario indica que el freno de mano ya está abajo y el testigo no se apaga. */
-const BRAKE_RELEASED =
-  /(freno( de mano)?[^.]{0,40}(liberad|sueltad|solt[eéó]|baj[eéó]|bajad|quit[eéó]|quitad|abajo))|((liber[eéó]|liberad|solt[eéó]|sueltad|baj[eéó]|bajad|quit[eéó]|quitad)[^.]{0,40}freno)|(sigue[^.]{0,20}encendid[^.]{0,30}freno)/i;
+const MENTIONS_BRAKE = /freno/i;
+const RELEASED = /liber[eéóa]|solt[eéó]|suelt|baj[eéóa]|quit[eéóa]|abajo/i;
+const STILL_ON = /sigue[^.]{0,20}encendid/i;
+
+/**
+ * El usuario indica que el freno de mano ya está abajo y el testigo no se apaga.
+ * Si se activa de más, solo se pide más precaución.
+ */
+const saysBrakeReleased = (description: string): boolean =>
+  description
+    .split(/[.!?\n]/)
+    .some((sentence) => MENTIONS_BRAKE.test(sentence) && (RELEASED.test(sentence) || STILL_ON.test(sentence)));
 
 /**
  * Con fotos reales, el modelo clasificó como freno de mano un "Freno de mano o nivel de líquido de frenos" y un "Testigo de frenos".
@@ -74,56 +83,70 @@ export interface FinalTelltale extends Omit<ModelTelltale, 'urgencia'> {
   accion: string;
 }
 
+/** El freno de mano con el freno liberado es una falla de frenos, y también lo es cualquier duda entre los dos. */
+function resolveCategory(telltale: ModelTelltale, description: string | undefined): TelltaleCategory {
+  if (telltale.categoria !== 'freno_mano') return telltale.categoria;
+  const released = description !== undefined && saysBrakeReleased(description);
+  return released || !isUnambiguousParkingBrake(telltale.nombre) ? 'frenos' : 'freno_mano';
+}
+
+function mustStop(category: TelltaleCategory, telltale: ModelTelltale, isBlinking: boolean): boolean {
+  if (STOP_CATEGORIES.has(category)) return true;
+  if (category === 'motor_emisiones') return isBlinking;
+  // El catálogo trata la transmisión en rojo como "no sigas manejando", y eso se mantiene.
+  return category === 'transmision' && (telltale.urgencia === 'rojo' || telltale.color === 'rojo');
+}
+
+const ACTION_BY_URGENCY: Record<ModelUrgency, string> = {
+  rojo: RED_ACTION,
+  amarillo: YELLOW_ACTION,
+  informativo: INFO_ACTION
+};
+
+function decideUrgency(
+  category: TelltaleCategory,
+  telltale: ModelTelltale,
+  stop: boolean
+): { urgencia: ModelUrgency; accion: string } {
+  if (stop) return { urgencia: 'rojo', accion: NEVER_DRIVE_ACTION };
+  if (category === 'airbag') return { urgencia: 'rojo', accion: SAFETY_SYSTEM_ACTION };
+  if (category === 'freno_mano') {
+    // Con el tablero iluminado de rojo, el color no dice nada: este testigo nunca sube de amarillo por sí solo.
+    return { urgencia: telltale.urgencia === 'informativo' ? 'informativo' : 'amarillo', accion: PARKING_BRAKE_ACTION };
+  }
+  // Un símbolo sin identificar en rojo se trata como rojo.
+  const urgencia = category === 'otro' && telltale.color === 'rojo' ? 'rojo' : telltale.urgencia;
+  return { urgencia, accion: ACTION_BY_URGENCY[urgencia] };
+}
+
+/** Quita del texto del modelo todo lo que sugiera seguir manejando. */
+function withoutUnsafeText(telltale: ModelTelltale, stop: boolean) {
+  const mechanicIsSafe = !suggestsDriving(telltale.cuandoIrAlMecanico);
+  const noteIsSafe = telltale.notaDelVehiculo !== null && !suggestsDriving(telltale.notaDelVehiculo);
+  return {
+    significado: suggestsDriving(telltale.significado) ? '' : telltale.significado,
+    porQuePasa: withoutDrivingAdvice(telltale.porQuePasa),
+    puedesRevisar: withoutDrivingAdvice(telltale.puedesRevisar),
+    noHagas: withoutDrivingAdvice(telltale.noHagas),
+    cuandoIrAlMecanico: stop ? SAFE_STOP_MECHANIC : mechanicIsSafe ? telltale.cuandoIrAlMecanico : '',
+    notaDelVehiculo: noteIsSafe ? telltale.notaDelVehiculo : null
+  };
+}
+
 /** Aplica el piso a un testigo. Es el único camino para que un testigo del modelo llegue al usuario. */
 export function applySafetyFloor(
   telltale: ModelTelltale,
   { blinking, description }: SafetyContext = {}
 ): FinalTelltale {
-  // El freno de mano con el freno liberado es una falla de frenos, y también lo es cualquier duda entre los dos.
-  const notReallyParkingBrake =
-    telltale.categoria === 'freno_mano' &&
-    (!isUnambiguousParkingBrake(telltale.nombre) || (description !== undefined && BRAKE_RELEASED.test(description)));
-  const categoria: TelltaleCategory = notReallyParkingBrake ? 'frenos' : telltale.categoria;
-  const isBlinking = blinking === true || telltale.parpadeando === true;
-  const stop =
-    STOP_CATEGORIES.has(categoria) ||
-    (categoria === 'motor_emisiones' && isBlinking) ||
-    // El catálogo trata la transmisión en rojo como "no sigas manejando", y eso se mantiene.
-    (categoria === 'transmision' && (telltale.urgencia === 'rojo' || telltale.color === 'rojo'));
-
-  let urgencia: ModelUrgency = telltale.urgencia;
-  let accion: string;
-  if (stop) {
-    urgencia = 'rojo';
-    accion = NEVER_DRIVE_ACTION;
-  } else if (categoria === 'airbag') {
-    urgencia = 'rojo';
-    accion = SAFETY_SYSTEM_ACTION;
-  } else if (categoria === 'freno_mano') {
-    // Con el tablero iluminado de rojo, el color no dice nada: este testigo nunca sube de amarillo por sí solo.
-    urgencia = telltale.urgencia === 'informativo' ? 'informativo' : 'amarillo';
-    accion = PARKING_BRAKE_ACTION;
-  } else {
-    // Un símbolo sin identificar en rojo se trata como rojo.
-    if (categoria === 'otro' && telltale.color === 'rojo') urgencia = 'rojo';
-    accion = urgencia === 'rojo' ? RED_ACTION : urgencia === 'amarillo' ? YELLOW_ACTION : INFO_ACTION;
-  }
-
-  const unsafeMechanic = stop || suggestsDriving(telltale.cuandoIrAlMecanico);
+  const categoria = resolveCategory(telltale, description);
+  const stop = mustStop(categoria, telltale, blinking === true || telltale.parpadeando === true);
   return {
     ...telltale,
+    ...decideUrgency(categoria, telltale, stop),
+    ...withoutUnsafeText(telltale, stop),
     categoria,
-    urgencia,
     debeDetenerse: stop,
-    accion,
-    parpadeando: blinking === true ? true : telltale.parpadeando,
-    significado: suggestsDriving(telltale.significado) ? '' : telltale.significado,
-    porQuePasa: withoutDrivingAdvice(telltale.porQuePasa),
-    puedesRevisar: withoutDrivingAdvice(telltale.puedesRevisar),
-    noHagas: withoutDrivingAdvice(telltale.noHagas),
-    cuandoIrAlMecanico: unsafeMechanic ? (stop ? SAFE_STOP_MECHANIC : '') : telltale.cuandoIrAlMecanico,
-    notaDelVehiculo:
-      telltale.notaDelVehiculo && !suggestsDriving(telltale.notaDelVehiculo) ? telltale.notaDelVehiculo : null
+    parpadeando: blinking === true ? true : telltale.parpadeando
   };
 }
 

@@ -6,8 +6,11 @@ const MAX_CHAT_MESSAGE_LENGTH = 500;
 
 const blankToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value);
 /** Un formulario multipart solo envía texto. */
-const textToBoolean = (value: unknown) =>
-  value === 'true' ? true : value === 'false' ? false : blankToUndefined(value);
+const textToBoolean = (value: unknown) => {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return blankToUndefined(value);
+};
 
 /** Campos de texto de POST /garage/:plate/diagnoses. La imagen llega aparte, por multer. */
 export const diagnosisInputSchema = z

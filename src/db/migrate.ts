@@ -34,12 +34,11 @@ if (isEntryPoint) {
     process.exit(1);
   }
   const direction = process.argv[2] === 'down' ? 'down' : 'up';
-  runMigrations(databaseUrl.data, direction)
-    .then(() => {
-      console.log(`Migraciones (${direction}) aplicadas.`);
-    })
-    .catch((error: unknown) => {
-      console.error('Error al ejecutar migraciones:', errorMessage(error));
-      process.exit(1);
-    });
+  try {
+    await runMigrations(databaseUrl.data, direction);
+    console.log(`Migraciones (${direction}) aplicadas.`);
+  } catch (error) {
+    console.error('Error al ejecutar migraciones:', errorMessage(error));
+    process.exit(1);
+  }
 }

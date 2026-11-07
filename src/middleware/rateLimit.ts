@@ -114,7 +114,7 @@ interface PerUserLimiterOptions {
   /** Los errores 4xx no llegaron a la operación costosa: no cuentan. */
   skipClientErrors?: boolean;
   skip?: () => boolean;
-  store?: Store | undefined;
+  store?: Store;
 }
 
 /** Límite por usuario autenticado (no por IP) para operaciones costosas, como la lectura de tarjetas. */

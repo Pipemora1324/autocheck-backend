@@ -68,7 +68,7 @@ export class RedisConnection implements KeyValueBackend {
     }
   }
 
-  async sendCommand(args: string[]): Promise<boolean | number | string | Array<boolean | number | string>> {
+  sendCommand(args: string[]): Promise<boolean | number | string | Array<boolean | number | string>> {
     return this.client.sendCommand(args);
   }
 

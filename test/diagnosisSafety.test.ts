@@ -89,6 +89,15 @@ describe('Piso de seguridad', () => {
     );
   });
 
+  it('hablar de otra cosa que baja no cuenta como freno liberado: va por frase', () => {
+    const parking = telltale({ nombre: 'Freno de mano', categoria: 'freno_mano', urgencia: 'informativo' });
+    assert.equal(
+      applySafetyFloor(parking, { description: 'Se bajó la presión. El freno lo puse yo.' }).categoria,
+      'freno_mano'
+    );
+    assert.equal(applySafetyFloor(parking, { description: 'El freno sigue encendido' }).categoria, 'frenos');
+  });
+
   it('un freno de mano dudoso se trata como frenos: nombres que devolvió Gemini con fotos reales', () => {
     for (const nombre of [
       'Freno de mano o nivel de líquido de frenos',

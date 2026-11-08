@@ -20,7 +20,11 @@ describe('Middleware de autenticación', () => {
   });
 
   it('exige token en /garage/*', async () => {
-    for (const [method, path] of [['GET', '/garage'], ['GET', '/garage/ABC-123'], ['POST', '/garage']] as const) {
+    for (const [method, path] of [
+      ['GET', '/garage'],
+      ['GET', '/garage/ABC-123'],
+      ['POST', '/garage']
+    ] as const) {
       const response = await ctx.request(method, path, { body: method === 'POST' ? { plate: 'ABC-123' } : undefined });
       assert.equal(response.status, 401, `${method} ${path}`);
     }
@@ -28,7 +32,11 @@ describe('Middleware de autenticación', () => {
 
   it('rechaza tokens inválidos, expirados, con otro secreto o sin firma', async () => {
     const payload = { email: 'usuario@example.com', role: 'admin' };
-    const options = { subject: '00000000-0000-4000-8000-000000000000', issuer: 'autocheck-api', audience: 'autocheck-app' };
+    const options = {
+      subject: '00000000-0000-4000-8000-000000000000',
+      issuer: 'autocheck-api',
+      audience: 'autocheck-app'
+    };
     const tokens = [
       'no-es-un-jwt',
       jwt.sign(payload, TEST_ACCESS_SECRET, { ...options, expiresIn: -10 }),
@@ -53,8 +61,17 @@ describe('Middleware de autenticación', () => {
   });
 
   it('las rutas de demostración /vehicles ya no existen', async () => {
-    for (const [method, path] of [['GET', '/vehicles'], ['GET', '/vehicles/ABC-1234'], ['POST', '/vehicles/scan'], ['PATCH', '/vehicles/ABC-1234/inspections']] as const) {
-      assert.equal((await ctx.request(method, path, { token: userToken, body: method === 'GET' ? undefined : {} })).status, 404, `${method} ${path}`);
+    for (const [method, path] of [
+      ['GET', '/vehicles'],
+      ['GET', '/vehicles/ABC-1234'],
+      ['POST', '/vehicles/scan'],
+      ['PATCH', '/vehicles/ABC-1234/inspections']
+    ] as const) {
+      assert.equal(
+        (await ctx.request(method, path, { token: userToken, body: method === 'GET' ? undefined : {} })).status,
+        404,
+        `${method} ${path}`
+      );
     }
   });
 

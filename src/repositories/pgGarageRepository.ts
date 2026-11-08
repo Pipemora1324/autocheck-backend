@@ -65,17 +65,26 @@ export class PgGarageRepository implements GarageRepository {
   constructor(private readonly pool: pg.Pool) {}
 
   async list(userId: string): Promise<GarageVehicleRecord[]> {
-    const { rows } = await this.pool.query<UserVehicleRow>('SELECT * FROM user_vehicles WHERE user_id = $1 ORDER BY plate', [userId]);
+    const { rows } = await this.pool.query<UserVehicleRow>(
+      'SELECT * FROM user_vehicles WHERE user_id = $1 ORDER BY plate',
+      [userId]
+    );
     return rows.map(toRecord);
   }
 
   async find(userId: string, plate: string): Promise<GarageVehicleRecord | null> {
-    const { rows } = await this.pool.query<UserVehicleRow>('SELECT * FROM user_vehicles WHERE user_id = $1 AND plate = $2', [userId, plate]);
+    const { rows } = await this.pool.query<UserVehicleRow>(
+      'SELECT * FROM user_vehicles WHERE user_id = $1 AND plate = $2',
+      [userId, plate]
+    );
     return rows[0] ? toRecord(rows[0]) : null;
   }
 
   async count(userId: string): Promise<number> {
-    const { rows } = await this.pool.query<{ total: number }>('SELECT count(*)::int AS total FROM user_vehicles WHERE user_id = $1', [userId]);
+    const { rows } = await this.pool.query<{ total: number }>(
+      'SELECT count(*)::int AS total FROM user_vehicles WHERE user_id = $1',
+      [userId]
+    );
     return rows[0]?.total ?? 0;
   }
 
@@ -87,11 +96,21 @@ export class PgGarageRepository implements GarageRepository {
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
         [
-          userId, vehicle.plate, vehicle.brand, vehicle.model, vehicle.year, vehicle.color, vehicle.cylinderCc, vehicle.chassis,
-          vehicle.fuelType, vehicle.serviceType, vehicle.mileageKm, vehicle.source
+          userId,
+          vehicle.plate,
+          vehicle.brand,
+          vehicle.model,
+          vehicle.year,
+          vehicle.color,
+          vehicle.cylinderCc,
+          vehicle.chassis,
+          vehicle.fuelType,
+          vehicle.serviceType,
+          vehicle.mileageKm,
+          vehicle.source
         ]
       );
-      return toRecord(rows[0]!);
+      return toRecord(rows[0]);
     } catch (error) {
       if ((error as { code?: string }).code === UNIQUE_VIOLATION) return null;
       throw error;
@@ -113,7 +132,10 @@ export class PgGarageRepository implements GarageRepository {
   }
 
   async delete(userId: string, plate: string): Promise<boolean> {
-    const { rowCount } = await this.pool.query('DELETE FROM user_vehicles WHERE user_id = $1 AND plate = $2', [userId, plate]);
+    const { rowCount } = await this.pool.query('DELETE FROM user_vehicles WHERE user_id = $1 AND plate = $2', [
+      userId,
+      plate
+    ]);
     return (rowCount ?? 0) > 0;
   }
 }

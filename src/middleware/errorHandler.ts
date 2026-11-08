@@ -14,7 +14,10 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
       errors: error.issues.flatMap((issue) =>
         // Esquemas estrictos: cada campo desconocido se reporta por separado y en español.
         issue.code === 'unrecognized_keys'
-          ? issue.keys.map((key) => ({ field: [...issue.path, key].join('.'), message: 'Este campo no está permitido.' }))
+          ? issue.keys.map((key) => ({
+              field: [...issue.path, key].join('.'),
+              message: 'Este campo no está permitido.'
+            }))
           : [{ field: issue.path.join('.'), message: issue.message }]
       )
     });
@@ -23,7 +26,10 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
 
   if (error instanceof multer.MulterError) {
     const tooLarge = error.code === 'LIMIT_FILE_SIZE';
-    const invalidUpload = error.code === 'LIMIT_FIELD_VALUE' ? 'Un campo de texto supera el tamaño permitido.' : 'Envía una sola imagen en el campo "image" (multipart/form-data).';
+    const invalidUpload =
+      error.code === 'LIMIT_FIELD_VALUE'
+        ? 'Un campo de texto supera el tamaño permitido.'
+        : 'Envía una sola imagen en el campo "image" (multipart/form-data).';
     response.status(tooLarge ? 413 : 400).json({
       message: tooLarge ? 'La imagen supera el máximo de 5 MB.' : invalidUpload,
       code: tooLarge ? 'IMAGE_TOO_LARGE' : 'INVALID_UPLOAD'
@@ -39,7 +45,9 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
   // Errores de body-parser (JSON mal formado, cuerpo demasiado grande).
   const status = (error as { status?: number }).status;
   if (status === 400 || status === 413) {
-    response.status(status).json({ message: status === 413 ? 'La solicitud es demasiado grande.' : 'El cuerpo de la solicitud no es JSON válido.' });
+    response.status(status).json({
+      message: status === 413 ? 'La solicitud es demasiado grande.' : 'El cuerpo de la solicitud no es JSON válido.'
+    });
     return;
   }
 

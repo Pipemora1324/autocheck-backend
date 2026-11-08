@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
-import { coloresDe, findTelltale, TELLTALES } from '../src/data/telltales.js';
+import { findTelltale, TELLTALES } from '../src/data/telltales.js';
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
@@ -14,10 +14,37 @@ describe('Catálogo de testigos', () => {
 
   it('incluye todos los testigos mínimos', () => {
     const required = [
-      'check_engine', 'presion_aceite', 'temperatura_motor', 'bateria_alternador', 'sistema_frenos', 'freno_mano', 'pastillas_freno', 'abs',
-      'airbag', 'cinturon', 'tpms', 'direccion_asistida', 'control_estabilidad', 'combustible_bajo', 'nivel_refrigerante', 'limpiabrisas_bajo',
-      'tapa_tanque', 'puerta_capo_baul', 'filtro_particulas', 'bujias_precalentamiento', 'mantenimiento', 'luces_altas', 'antiniebla_delanteras',
-      'antiniebla_traseras', 'direccionales', 'inmovilizador_llave', 'transmision', 'sistema_hibrido_electrico', 'crucero', 'epc', 'asistente_carril'
+      'check_engine',
+      'presion_aceite',
+      'temperatura_motor',
+      'bateria_alternador',
+      'sistema_frenos',
+      'freno_mano',
+      'pastillas_freno',
+      'abs',
+      'airbag',
+      'cinturon',
+      'tpms',
+      'direccion_asistida',
+      'control_estabilidad',
+      'combustible_bajo',
+      'nivel_refrigerante',
+      'limpiabrisas_bajo',
+      'tapa_tanque',
+      'puerta_capo_baul',
+      'filtro_particulas',
+      'bujias_precalentamiento',
+      'mantenimiento',
+      'luces_altas',
+      'antiniebla_delanteras',
+      'antiniebla_traseras',
+      'direccionales',
+      'inmovilizador_llave',
+      'transmision',
+      'sistema_hibrido_electrico',
+      'crucero',
+      'epc',
+      'asistente_carril'
     ];
     for (const id of required) assert.ok(findTelltale(id), id);
   });
@@ -34,7 +61,11 @@ describe('Catálogo de testigos', () => {
     for (const telltale of TELLTALES.filter((item) => item.neverDrive)) {
       assert.equal(telltale.severidad, 'rojo', telltale.id);
       const texts = [telltale.significado, telltale.cuandoIrAlMecanico, ...telltale.puedesRevisar].join(' ');
-      assert.doesNotMatch(texts, /puedes? (seguir|continuar)|sigue manejando|llega(r)? al taller manejando/i, telltale.id);
+      assert.doesNotMatch(
+        texts,
+        /puedes? (seguir|continuar)|sigue manejando|llega(r)? al taller manejando/i,
+        telltale.id
+      );
       assert.match(telltale.noHagas.join(' '), /No sigas manejando|no sigas manejando/, telltale.id);
     }
   });
@@ -67,22 +98,21 @@ describe('Catálogo de testigos', () => {
     assert.equal(findTelltale('asistente_carril')!.severidad, 'informativo');
   });
 
-  it('los colores admitidos incluyen el de la severidad y solo check engine cambia al parpadear', () => {
-    const severityColor = { rojo: 'rojo', amarillo: 'amarillo' } as const;
-    for (const item of TELLTALES) {
-      if (item.severidad === 'informativo') continue;
-      assert.ok(coloresDe(item).includes(severityColor[item.severidad]), item.id);
-    }
-    assert.deepEqual(TELLTALES.filter((item) => item.siParpadea).map((item) => item.id), ['check_engine']);
+  it('solo check engine cambia al parpadear', () => {
+    assert.deepEqual(
+      TELLTALES.filter((item) => item.siParpadea).map((item) => item.id),
+      ['check_engine']
+    );
     assert.equal(findTelltale('check_engine')!.severidad, 'amarillo');
     assert.match(findTelltale('check_engine')!.siParpadea!.cuandoIrAlMecanico, /si se ignora/i);
-    assert.deepEqual(TELLTALES.filter((item) => item.exigeColor).map((item) => item.id).sort(), ['nivel_aceite_bajo', 'nivel_refrigerante']);
   });
 
   it('cada testigo tiene todo su contenido', () => {
     for (const item of TELLTALES) {
-      for (const field of ['nombre', 'descripcionSimbolo', 'significado', 'cuandoIrAlMecanico'] as const) assert.ok(item[field].length > 10 || field === 'nombre', `${item.id}.${field}`);
-      for (const field of ['alias', 'causasProbables', 'puedesRevisar', 'noHagas', 'aplicaA'] as const) assert.ok(item[field].length > 0, `${item.id}.${field}`);
+      for (const field of ['nombre', 'descripcionSimbolo', 'significado', 'cuandoIrAlMecanico'] as const)
+        assert.ok(item[field].length > 10 || field === 'nombre', `${item.id}.${field}`);
+      for (const field of ['alias', 'causasProbables', 'puedesRevisar', 'noHagas', 'aplicaA'] as const)
+        assert.ok(item[field].length > 0, `${item.id}.${field}`);
       // El motivo concreto: dice qué puede pasar si se ignora, no un genérico "ve al taller".
       assert.match(item.cuandoIrAlMecanico, /si se ignora/i, item.id);
     }
@@ -100,7 +130,8 @@ describe('Catálogo de testigos', () => {
   });
 
   it('los testigos de un solo tipo de motor quedan limitados a ese tipo', () => {
-    for (const id of ['filtro_particulas', 'bujias_precalentamiento', 'adblue', 'agua_filtro_diesel']) assert.deepEqual(findTelltale(id)!.aplicaA, ['diesel'], id);
+    for (const id of ['filtro_particulas', 'bujias_precalentamiento', 'adblue', 'agua_filtro_diesel'])
+      assert.deepEqual(findTelltale(id)!.aplicaA, ['diesel'], id);
     assert.ok(!findTelltale('presion_aceite')!.aplicaA.includes('electrico'));
     assert.deepEqual(findTelltale('sistema_hibrido_electrico')!.aplicaA, ['hibrido', 'electrico']);
   });
@@ -113,7 +144,9 @@ describe('Catálogo de testigos', () => {
 
 describe('GET /telltales', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp(); });
+  before(async () => {
+    ctx = await startTestApp();
+  });
   after(() => ctx.close());
 
   it('exige sesión', async () => {

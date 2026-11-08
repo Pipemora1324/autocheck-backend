@@ -18,7 +18,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
-        value: "24"
+        value: '24'
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
@@ -45,7 +45,7 @@ services:
         value: strict
       # Vercel (rewrite) + balanceador de Render = 2 proxies delante de Express.
       - key: TRUST_PROXY
-        value: "2"
+        value: '2'
       # --- Opcionales (pueden quedar vacías) ---
       # Correos que reciben rol admin al verificar su correo, separados por coma.
       - key: ADMIN_EMAILS
@@ -58,3 +58,5 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
+      - key: REDIS_URL
+        sync: false

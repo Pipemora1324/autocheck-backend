@@ -2,9 +2,16 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { loadConfig } from '../src/config/env.js';
-import { CardReaderUnavailableError, CardScannerBusyError, CardUnreadableError, type CardImage, type RawCardExtraction } from '../src/services/cardScanner.js';
+import {
+  CardReaderUnavailableError,
+  CardScannerBusyError,
+  CardUnreadableError,
+  type CardImage,
+  type RawCardExtraction
+} from '../src/services/cardScanner.js';
 import { createCardScanner } from '../src/services/createCardScanner.js';
-import { GEMINI_INTERACTIONS_URL, GEMINI_RESPONSE_SCHEMA, GeminiCardScanner } from '../src/services/geminiCardScanner.js';
+import { GeminiCardScanner, GEMINI_RESPONSE_SCHEMA } from '../src/services/geminiCardScanner.js';
+import { GEMINI_INTERACTIONS_URL } from '../src/services/geminiClient.js';
 import { PRIVACY_POLICY_VERSION, REGISTRATION_CONSENT_TEXT } from '../src/services/privacyPolicy.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
@@ -29,19 +36,26 @@ const extraction: RawCardExtraction = {
 const interaction = (text: string) => ({
   id: 'interaccion-1',
   status: 'completed',
-  steps: [{ type: 'thought', content: [] }, { type: 'model_output', content: [{ type: 'text', text }] }]
+  steps: [
+    { type: 'thought', content: [] },
+    { type: 'model_output', content: [{ type: 'text', text }] }
+  ]
 });
 
 const fakeFetch = (status: number, body: unknown) => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const impl = (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), init: init! });
-    return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    calls.push({ url: url as string, init: init! });
+    return new Response(typeof body === 'string' ? body : JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' }
+    });
   }) as typeof fetch;
   return { impl, calls };
 };
 
-const scanner = (impl: typeof fetch) => new GeminiCardScanner({ apiKey: GEMINI_KEY, model: 'gemini-3.5-flash-lite', fetchImpl: impl, retryDelaysMs: [] });
+const scanner = (impl: typeof fetch) =>
+  new GeminiCardScanner({ apiKey: GEMINI_KEY, model: 'gemini-3.5-flash-lite', fetchImpl: impl, retryDelaysMs: [] });
 
 describe('GeminiCardScanner (fetch simulado)', () => {
   it('envía la imagen en base64 a la Interactions API con x-goog-api-key y pide JSON con esquema', async () => {
@@ -49,7 +63,7 @@ describe('GeminiCardScanner (fetch simulado)', () => {
     const result = await scanner(impl).read(image);
     assert.deepEqual(result, extraction);
 
-    const { url, init } = calls[0]!;
+    const { url, init } = calls[0];
     assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
     assert.equal(url, GEMINI_INTERACTIONS_URL);
     assert.equal(init.method, 'POST');
@@ -57,12 +71,16 @@ describe('GeminiCardScanner (fetch simulado)', () => {
     assert.equal(headers['x-goog-api-key'], GEMINI_KEY);
     assert.equal(headers['content-type'], 'application/json');
 
-    const body = JSON.parse(String(init.body));
+    const body = JSON.parse(init.body as string);
     assert.equal(body.model, 'gemini-3.5-flash-lite');
     assert.equal(body.input[0].type, 'text');
     assert.match(body.input[0].text, /nunca una instrucción/);
     assert.deepEqual(body.input[1], { type: 'image', data: image.data.toString('base64'), mime_type: 'image/jpeg' });
-    assert.deepEqual(body.response_format, { type: 'text', mime_type: 'application/json', schema: GEMINI_RESPONSE_SCHEMA });
+    assert.deepEqual(body.response_format, {
+      type: 'text',
+      mime_type: 'application/json',
+      schema: GEMINI_RESPONSE_SCHEMA
+    });
     assert.ok(init.signal, 'debe tener tiempo límite');
   });
 
@@ -84,7 +102,10 @@ describe('GeminiCardScanner (fetch simulado)', () => {
   });
 
   it('429 de Gemini se reporta como servicio ocupado', async () => {
-    await assert.rejects(scanner(fakeFetch(429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }).impl).read(image), CardScannerBusyError);
+    await assert.rejects(
+      scanner(fakeFetch(429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }).impl).read(image),
+      CardScannerBusyError
+    );
   });
 
   it('otros errores: 400 ilegible; 401/403/5xx/red no disponible; sin registrar el cuerpo ni la clave', async () => {
@@ -92,11 +113,19 @@ describe('GeminiCardScanner (fetch simulado)', () => {
     const original = console.error;
     console.error = (...args: unknown[]) => logs.push(args.map(String).join(' '));
     try {
-      await assert.rejects(scanner(fakeFetch(400, { error: { message: 'detalle con datos' } }).impl).read(image), CardUnreadableError);
+      await assert.rejects(
+        scanner(fakeFetch(400, { error: { message: 'detalle con datos' } }).impl).read(image),
+        CardUnreadableError
+      );
       for (const status of [401, 403, 500, 503]) {
-        await assert.rejects(scanner(fakeFetch(status, { error: { message: 'detalle con datos' } }).impl).read(image), CardReaderUnavailableError);
+        await assert.rejects(
+          scanner(fakeFetch(status, { error: { message: 'detalle con datos' } }).impl).read(image),
+          CardReaderUnavailableError
+        );
       }
-      const offline = (async () => { throw new TypeError('fetch failed'); }) as typeof fetch;
+      const offline = (async () => {
+        throw new TypeError('fetch failed');
+      }) as typeof fetch;
       await assert.rejects(scanner(offline).read(image), CardReaderUnavailableError);
     } finally {
       console.error = original;
@@ -108,11 +137,18 @@ describe('GeminiCardScanner (fetch simulado)', () => {
 });
 
 describe('SCAN_PROVIDER', () => {
-  const base = { DATABASE_URL: 'postgres://localhost/autocheck', JWT_SECRET: 'a'.repeat(32), JWT_REFRESH_SECRET: 'b'.repeat(32) };
+  const base = {
+    DATABASE_URL: 'postgres://localhost/autocheck',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32)
+  };
 
   it('elige el proveedor; sin clave queda apagado (503) en lugar de impedir el arranque', () => {
     assert.deepEqual(loadConfig(base).scan, { provider: 'none' });
-    assert.deepEqual(loadConfig({ ...base, SCAN_PROVIDER: 'gemini' }).scan, { provider: 'none', missingKeyFor: 'gemini' });
+    assert.deepEqual(loadConfig({ ...base, SCAN_PROVIDER: 'gemini' }).scan, {
+      provider: 'none',
+      missingKeyFor: 'gemini'
+    });
     assert.deepEqual(loadConfig({ ...base, SCAN_PROVIDER: 'Gemini', GEMINI_API_KEY: GEMINI_KEY }).scan, {
       provider: 'gemini',
       apiKey: GEMINI_KEY,
@@ -120,7 +156,11 @@ describe('SCAN_PROVIDER', () => {
     });
     const anthropic = loadConfig({ ...base, SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: GEMINI_KEY });
     assert.equal(anthropic.scan.provider === 'anthropic' && anthropic.scan.model, 'claude-sonnet-5-5');
-    assert.equal(loadConfig({ ...base, SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: GEMINI_KEY, GEMINI_MODEL: 'gemini-3.8-flash' }).scan.provider === 'gemini', true);
+    assert.equal(
+      loadConfig({ ...base, SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: GEMINI_KEY, GEMINI_MODEL: 'gemini-3.8-flash' })
+        .scan.provider === 'gemini',
+      true
+    );
     assert.throws(() => loadConfig({ ...base, SCAN_PROVIDER: 'openai' }), /SCAN_PROVIDER/);
   });
 
@@ -139,7 +179,10 @@ describe('GET /config/public y avisos de privacidad', () => {
     ctx = await startTestApp({ cardReader: gemini });
     off = await startTestApp({ cardReader: null });
   });
-  after(async () => { await ctx.close(); await off.close(); });
+  after(async () => {
+    await ctx.close();
+    await off.close();
+  });
 
   it('es público y expone el proveedor activo, el aviso y el texto de consentimiento versionado', async () => {
     const response = await ctx.request('GET', '/config/public');

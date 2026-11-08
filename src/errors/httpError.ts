@@ -9,10 +9,16 @@ export class HttpError extends Error {
   }
 }
 
+/** El mensaje de un valor capturado, que en JavaScript puede no ser un Error. */
+export const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 export const badRequest = (message: string, details?: Record<string, unknown>) => new HttpError(400, message, details);
 export const unauthorized = (message = 'No autenticado.') => new HttpError(401, message);
-export const forbidden = (message = 'No tienes permisos para realizar esta acción.', details?: Record<string, unknown>) =>
-  new HttpError(403, message, details);
+export const forbidden = (
+  message = 'No tienes permisos para realizar esta acción.',
+  details?: Record<string, unknown>
+) => new HttpError(403, message, details);
 export const notFound = (message: string, details?: Record<string, unknown>) => new HttpError(404, message, details);
 export const conflict = (message: string, details?: Record<string, unknown>) => new HttpError(409, message, details);
-export const serviceUnavailable = (message: string, details?: Record<string, unknown>) => new HttpError(503, message, details);
+export const serviceUnavailable = (message: string, details?: Record<string, unknown>) =>
+  new HttpError(503, message, details);

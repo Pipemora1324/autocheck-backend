@@ -81,6 +81,7 @@ La conexión exige TLS con verificación del certificado (ver `src/db/pool.ts`).
    | Variable | Para qué | Si queda vacía |
    | --- | --- | --- |
    | `ADMIN_EMAILS` | Correos que reciben rol admin al verificar (paso 5) | Nadie es admin automáticamente |
+   | `REDIS_URL` | Redis para caché, límites distribuidos y Socket.IO. Usa `rediss://`, salvo en una red privada | Todo funciona en memoria, y `/health` informa `redis: "disabled"` |
    | `GEMINI_API_KEY` | Lectura de tarjeta y diagnóstico con Gemini (paso 6) | `scan-card` y el diagnóstico con IA responden 503; la elección manual sigue funcionando |
    | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | Solo si cambias a `SCAN_PROVIDER=anthropic` (no están en `render.yaml`) | — |
 

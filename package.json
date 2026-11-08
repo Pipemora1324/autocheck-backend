@@ -8,16 +8,22 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "tsx --test \"test/**/*.test.ts\"",
+    "test:coverage": "c8 tsx --test \"test/**/*.test.ts\"",
     "migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts up",
     "migrate:down": "tsx --env-file-if-exists=.env src/db/migrate.ts down",
     "migrate:prod": "node dist/db/migrate.js up",
     "prebuild": "node -e \"require(\\\"node:fs\\\").rmSync(\\\"dist\\\",{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.test.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "eval:telltales": "tsx --env-file-if-exists=.env scripts/evalTelltales.ts",
     "smoke:gemini": "tsx --env-file-if-exists=.env scripts/smokeGemini.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",
+    "@socket.io/redis-adapter": "8.3.0",
     "argon2": "0.45.1",
     "cookie-parser": "1.4.7",
     "cors": "^2.8.5",
@@ -30,9 +36,13 @@
     "node-pg-migrate": "9.0.0",
     "nodemailer": "10.1.7",
     "pg": "8.23.1",
+    "rate-limit-redis": "6.0.1",
+    "redis": "6.3.0",
+    "socket.io": "4.8.4",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/cookie-parser": "1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -42,8 +52,15 @@
     "@types/node": "^24.0.0",
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
+    "c8": "12.0.0",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "socket.io-client": "4.8.4",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "typescript-eslint": "8.72.0"
   },
   "description": "API REST de AutoCheck-CO",
   "engines": {

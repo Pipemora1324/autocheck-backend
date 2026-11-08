@@ -35,52 +35,112 @@ describe('loadConfig', () => {
   });
 
   it('explica qué variables faltan', () => {
-    assert.throws(() => loadConfig({}), (error: Error) => {
-      assert.ok(error instanceof EnvValidationError);
-      for (const name of ['DATABASE_URL', 'JWT_SECRET', 'JWT_REFRESH_SECRET']) assert.match(error.message, new RegExp(name));
-      return true;
-    });
+    assert.throws(
+      () => loadConfig({}),
+      (error: Error) => {
+        assert.ok(error instanceof EnvValidationError);
+        for (const name of ['DATABASE_URL', 'JWT_SECRET', 'JWT_REFRESH_SECRET'])
+          assert.match(error.message, new RegExp(name));
+        return true;
+      }
+    );
   });
 
   it('exige secretos largos y distintos', () => {
     assert.throws(() => loadConfig({ ...valid, JWT_SECRET: 'corto' }), /JWT_SECRET/);
-    assert.throws(() => loadConfig({ ...valid, JWT_REFRESH_SECRET: valid.JWT_SECRET }), /JWT_REFRESH_SECRET: Debe ser distinto/);
+    assert.throws(
+      () => loadConfig({ ...valid, JWT_REFRESH_SECRET: valid.JWT_SECRET }),
+      /JWT_REFRESH_SECRET: Debe ser distinto/
+    );
   });
 
   it('en producción exige CORS_ORIGIN, APP_URL y el correo por Brevo, y nada de SMTP', () => {
-    assert.throws(() => loadConfig({ ...valid, NODE_ENV: 'production' }), (error: Error) => {
-      for (const name of ['CORS_ORIGIN', 'APP_URL', 'BREVO_API_KEY', 'MAIL_FROM']) assert.match(error.message, new RegExp(name));
-      assert.doesNotMatch(error.message, /SMTP_|ANTHROPIC|ADMIN_EMAILS/);
-      return true;
-    });
+    assert.throws(
+      () => loadConfig({ ...valid, NODE_ENV: 'production' }),
+      (error: Error) => {
+        for (const name of ['CORS_ORIGIN', 'APP_URL', 'BREVO_API_KEY', 'MAIL_FROM'])
+          assert.match(error.message, new RegExp(name));
+        assert.doesNotMatch(error.message, /SMTP_|ANTHROPIC|ADMIN_EMAILS/);
+        return true;
+      }
+    );
 
-    const config = loadConfig({ ...production, CORS_ORIGIN: 'https://a.vercel.app, https://b.com', APP_URL: 'https://a.vercel.app/' });
+    const config = loadConfig({
+      ...production,
+      CORS_ORIGIN: 'https://a.vercel.app, https://b.com',
+      APP_URL: 'https://a.vercel.app/'
+    });
     assert.deepEqual(config.corsOrigins, ['https://a.vercel.app', 'https://b.com']);
     assert.equal(config.appUrl, 'https://a.vercel.app');
-    assert.deepEqual(config.email, { provider: 'brevo', apiKey: BREVO_KEY, from: { email: 'no-reply@autocheck.example', name: 'AutoCheck-CO' } });
+    assert.deepEqual(config.email, {
+      provider: 'brevo',
+      apiKey: BREVO_KEY,
+      from: { email: 'no-reply@autocheck.example', name: 'AutoCheck-CO' }
+    });
   });
 
   it('arranca con las variables opcionales vacías, como las deja Render', () => {
-    const config = loadConfig({ ...production, SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: '', ANTHROPIC_API_KEY: '', ADMIN_EMAILS: '', SMTP_HOST: '' });
+    const config = loadConfig({
+      ...production,
+      SCAN_PROVIDER: 'gemini',
+      GEMINI_API_KEY: '',
+      ANTHROPIC_API_KEY: '',
+      ADMIN_EMAILS: '',
+      SMTP_HOST: ''
+    });
     assert.deepEqual(config.scan, { provider: 'none', missingKeyFor: 'gemini' });
     assert.deepEqual(config.adminEmails, []);
   });
 
   it('correo: valida cada proveedor por separado', () => {
     assert.throws(() => loadConfig({ ...production, BREVO_API_KEY: '' }), /BREVO_API_KEY: Es obligatoria/);
-    assert.throws(() => loadConfig({ ...production, MAIL_FROM: 'AutoCheck <no-reply@autocheck.example>' }), /MAIL_FROM: Debe ser solo el correo/);
+    assert.throws(
+      () => loadConfig({ ...production, MAIL_FROM: 'AutoCheck <no-reply@autocheck.example>' }),
+      /MAIL_FROM: Debe ser solo el correo/
+    );
     assert.throws(() => loadConfig({ ...production, EMAIL_PROVIDER: 'console' }), /EMAIL_PROVIDER: console no envía/);
-    assert.throws(() => loadConfig({ ...valid, EMAIL_PROVIDER: 'smtp', MAIL_FROM: 'a@b.co' }), /SMTP_HOST[\s\S]*SMTP_USER[\s\S]*SMTP_PASS/);
+    assert.throws(
+      () => loadConfig({ ...valid, EMAIL_PROVIDER: 'smtp', MAIL_FROM: 'a@b.co' }),
+      /SMTP_HOST[\s\S]*SMTP_USER[\s\S]*SMTP_PASS/
+    );
     assert.throws(() => loadConfig({ ...valid, EMAIL_PROVIDER: 'mailgun' }), /EMAIL_PROVIDER/);
 
-    const smtp = loadConfig({ ...valid, EMAIL_PROVIDER: 'SMTP', SMTP_HOST: 'smtp.example.com', SMTP_PORT: '465', SMTP_USER: 'u', SMTP_PASS: 'p', MAIL_FROM: 'a@b.co', MAIL_FROM_NAME: 'Taller' });
-    assert.equal(smtp.email.provider, 'smtp');
-    assert.deepEqual(smtp.email.provider === 'smtp' && { port: smtp.email.port, from: smtp.email.from }, { port: 465, from: { email: 'a@b.co', name: 'Taller' } });
+    const smtp = loadConfig({
+      ...valid,
+      EMAIL_PROVIDER: 'SMTP',
+      SMTP_HOST: 'smtp.example.com',
+      SMTP_PORT: '465',
+      SMTP_USER: 'u',
+      SMTP_PASS: 'p',
+      MAIL_FROM: 'a@b.co',
+      MAIL_FROM_NAME: 'Taller'
+    });
+    if (smtp.email.provider !== 'smtp') throw new Error(`Proveedor inesperado: ${smtp.email.provider}`);
+    assert.deepEqual(
+      { port: smtp.email.port, from: smtp.email.from },
+      { port: 465, from: { email: 'a@b.co', name: 'Taller' } }
+    );
+  });
+
+  it('REDIS_URL: es opcional y solo acepta redis:// o rediss://', () => {
+    assert.equal(loadConfig(valid).redisUrl, null);
+    assert.equal(loadConfig({ ...valid, REDIS_URL: '' }).redisUrl, null);
+    assert.equal(
+      loadConfig({ ...valid, REDIS_URL: 'rediss://usuario:clave@redis.example.com:6380' }).redisUrl,
+      'rediss://usuario:clave@redis.example.com:6380'
+    );
+    assert.throws(() => loadConfig({ ...valid, REDIS_URL: 'http://redis.example.com' }), /REDIS_URL/);
   });
 
   it('ADMIN_EMAILS: lista normalizada y validada', () => {
-    assert.deepEqual(loadConfig({ ...valid, ADMIN_EMAILS: ' Ana@Example.com, ,luis@example.com ' }).adminEmails, ['ana@example.com', 'luis@example.com']);
-    assert.throws(() => loadConfig({ ...valid, ADMIN_EMAILS: 'ana@example.com, no-es-correo' }), /ADMIN_EMAILS: Correo inválido "no-es-correo"/);
+    assert.deepEqual(loadConfig({ ...valid, ADMIN_EMAILS: ' Ana@Example.com, ,luis@example.com ' }).adminEmails, [
+      'ana@example.com',
+      'luis@example.com'
+    ]);
+    assert.throws(
+      () => loadConfig({ ...valid, ADMIN_EMAILS: 'ana@example.com, no-es-correo' }),
+      /ADMIN_EMAILS: Correo inválido "no-es-correo"/
+    );
   });
 
   it('modelos de lectura: claude-sonnet-5-5 y gemini-3.5-flash-lite por defecto, y configurables', () => {
@@ -90,9 +150,15 @@ describe('loadConfig', () => {
       return scan.provider === 'none' ? null : scan.model;
     };
     assert.equal(model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key }), 'claude-sonnet-5-5');
-    assert.equal(model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key, ANTHROPIC_MODEL: 'claude-opus-5-5' }), 'claude-opus-5-5');
+    assert.equal(
+      model({ SCAN_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: key, ANTHROPIC_MODEL: 'claude-opus-5-5' }),
+      'claude-opus-5-5'
+    );
     assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key }), 'gemini-3.5-flash-lite');
-    assert.equal(model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key, GEMINI_MODEL: 'gemini-3.8-flash' }), 'gemini-3.8-flash');
+    assert.equal(
+      model({ SCAN_PROVIDER: 'gemini', GEMINI_API_KEY: key, GEMINI_MODEL: 'gemini-3.8-flash' }),
+      'gemini-3.8-flash'
+    );
   });
 
   it('cookie y proxy: valores por defecto por entorno', () => {

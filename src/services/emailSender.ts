@@ -74,7 +74,8 @@ export class SmtpEmailSender implements EmailSender {
 
 /** Solo desarrollo: imprime el correo en texto plano (incluye el enlace) en lugar de enviarlo. */
 export class ConsoleEmailSender implements EmailSender {
-  async send(message: EmailMessage): Promise<void> {
+  send(message: EmailMessage): Promise<void> {
     console.info(`[desarrollo] Correo para ${message.to}: ${message.subject}\n${message.text}`);
+    return Promise.resolve();
   }
 }

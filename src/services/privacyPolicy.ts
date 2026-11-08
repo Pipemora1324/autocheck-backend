@@ -27,13 +27,17 @@ export const REGISTRATION_CONSENT_TEXT = [
 /** Aviso que se muestra antes de subir la foto, según el proveedor activo. null si la lectura está apagada. */
 export function scanProviderNotice(provider: ScanProviderName | 'none'): string | null {
   if (provider === 'gemini') {
-    return 'La foto de la tarjeta se envía a Google (Gemini API, plan gratuito) solo para extraer los datos; AutoCheck-CO no la guarda. '
-      + 'En el plan gratuito, Google puede usar el contenido enviado para mejorar sus productos. '
-      + 'Sube solo tu propia tarjeta o una que estés autorizado a usar.';
+    return (
+      'La foto de la tarjeta se envía a Google (Gemini API, plan gratuito) solo para extraer los datos; AutoCheck-CO no la guarda. ' +
+      'En el plan gratuito, Google puede usar el contenido enviado para mejorar sus productos. ' +
+      'Sube solo tu propia tarjeta o una que estés autorizado a usar.'
+    );
   }
   if (provider === 'anthropic') {
-    return 'La foto de la tarjeta se envía a Anthropic (API de Claude) solo para extraer los datos; AutoCheck-CO no la guarda. '
-      + 'Anthropic la procesa según sus condiciones de uso de la API. Sube solo tu propia tarjeta o una que estés autorizado a usar.';
+    return (
+      'La foto de la tarjeta se envía a Anthropic (API de Claude) solo para extraer los datos; AutoCheck-CO no la guarda. ' +
+      'Anthropic la procesa según sus condiciones de uso de la API. Sube solo tu propia tarjeta o una que estés autorizado a usar.'
+    );
   }
   return null;
 }
@@ -41,8 +45,10 @@ export function scanProviderNotice(provider: ScanProviderName | 'none'): string 
 /** Aviso que se muestra antes de subir la foto del tablero. null si la IA está apagada (la elección manual no envía nada). */
 export function diagnosisProviderNotice(provider: TelltaleIdentifier['provider'] | 'none'): string | null {
   if (provider !== 'gemini') return null;
-  return 'La foto del tablero y tu descripción se envían a un proveedor externo de inteligencia artificial (Google, Gemini API, plan gratuito) para identificar los testigos. '
-    + 'En el plan gratuito, Google puede usarlas para mejorar sus productos. La foto no se guarda en nuestros servidores. '
-    + 'Si usas el chat, tus mensajes también se envían a ese proveedor y la conversación se guarda hasta que borres el diagnóstico o tu cuenta. '
-    + 'Evita que aparezcan personas, documentos o la placa. Si prefieres no enviarla, elige el testigo de la lista.';
+  return (
+    'La foto del tablero y tu descripción se envían a un proveedor externo de inteligencia artificial (Google, Gemini API, plan gratuito) para identificar los testigos. ' +
+    'En el plan gratuito, Google puede usarlas para mejorar sus productos. La foto no se guarda en nuestros servidores. ' +
+    'Si usas el chat, tus mensajes también se envían a ese proveedor y la conversación se guarda hasta que borres el diagnóstico o tu cuenta. ' +
+    'Evita que aparezcan personas, documentos o la placa. Si prefieres no enviarla, elige el testigo de la lista.'
+  );
 }

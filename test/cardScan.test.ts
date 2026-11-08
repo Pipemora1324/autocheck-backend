@@ -76,7 +76,8 @@ describe('POST /garage/scan-card', () => {
     reader.next = reading();
   });
 
-  const scan = (data: Uint8Array, type = 'image/jpeg', field = 'image') => ctx.upload('/garage/scan-card', { token, data, type, field });
+  const scan = (data: Uint8Array, type = 'image/jpeg', field = 'image') =>
+    ctx.upload('/garage/scan-card', { token, data, type, field });
 
   it('exige sesión y correo verificado', async () => {
     assert.equal((await ctx.upload('/garage/scan-card', { data: JPEG })).status, 401);
@@ -108,12 +109,17 @@ describe('POST /garage/scan-card', () => {
 
   it('el usuario confirma con POST /garage (source "scan"); el documento del propietario no se acepta', async () => {
     const prefill = (await scan(JPEG)).body.vehicle;
-    const body = Object.fromEntries(Object.entries(prefill).map(([key, item]) => [key, (item as { value: unknown }).value]));
+    const body = Object.fromEntries(
+      Object.entries(prefill).map(([key, item]) => [key, (item as { value: unknown }).value])
+    );
     const created = await ctx.request('POST', '/garage', { token, body: { ...body, source: 'scan' } });
     assert.equal(created.status, 201);
     assert.equal(created.body.source, 'scan');
 
-    const withOwner = await ctx.request('POST', '/garage', { token, body: { ...body, plate: 'ABC-124', ownerDocument: OWNER_DOCUMENT } });
+    const withOwner = await ctx.request('POST', '/garage', {
+      token,
+      body: { ...body, plate: 'ABC-124', ownerDocument: OWNER_DOCUMENT }
+    });
     assert.equal(withOwner.status, 400);
   });
 
@@ -121,7 +127,10 @@ describe('POST /garage/scan-card', () => {
     assert.equal((await scan(JPEG, 'image/png')).status, 200);
     assert.equal((await scan(PNG, 'image/jpeg')).status, 200);
     assert.equal((await scan(WEBP, 'application/octet-stream')).status, 200);
-    assert.deepEqual(reader.calls.map((call) => call.mediaType), ['image/jpeg', 'image/png', 'image/webp']);
+    assert.deepEqual(
+      reader.calls.map((call) => call.mediaType),
+      ['image/jpeg', 'image/png', 'image/webp']
+    );
   });
 
   it('rechaza archivos que no son imágenes, aunque digan serlo', async () => {
@@ -201,7 +210,9 @@ describe('POST /garage/scan-card', () => {
 
 describe('POST /garage/scan-card sin ANTHROPIC_API_KEY', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ cardReader: null }); });
+  before(async () => {
+    ctx = await startTestApp({ cardReader: null });
+  });
   after(() => ctx.close());
 
   it('responde 503 con un mensaje claro en español', async () => {
@@ -215,7 +226,9 @@ describe('POST /garage/scan-card sin ANTHROPIC_API_KEY', () => {
 
 describe('Rate limit de lectura de tarjetas (por usuario)', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ cardReader: new FakeCardReader(), rateLimits: { scanCardPerHour: 2 } }); });
+  before(async () => {
+    ctx = await startTestApp({ cardReader: new FakeCardReader(), rateLimits: { scanCardPerHour: 2 } });
+  });
   after(() => ctx.close());
 
   it('limita a cada usuario por separado', async () => {
@@ -234,7 +247,16 @@ describe('AnthropicCardScanner (cliente simulado, sin llamar a la API)', () => {
   const image: CardImage = { data: Buffer.from(JPEG), mediaType: 'image/jpeg' };
   const fakeClient = (respond: (params: any) => unknown) => {
     const calls: any[] = [];
-    const client = { beta: { messages: { parse: async (params: any) => { calls.push(params); return respond(params); } } } } as any;
+    const client = {
+      beta: {
+        messages: {
+          parse: async (params: any) => {
+            calls.push(params);
+            return respond(params);
+          }
+        }
+      }
+    } as any;
     return { client, calls };
   };
 
@@ -257,9 +279,16 @@ describe('AnthropicCardScanner (cliente simulado, sin llamar a la API)', () => {
   });
 
   it('un rechazo o una salida no válida se reportan como tarjeta ilegible', async () => {
-    for (const response of [{ stop_reason: 'refusal', parsed_output: null }, { stop_reason: 'end_turn', parsed_output: null }, { stop_reason: 'max_tokens', parsed_output: null }]) {
+    for (const response of [
+      { stop_reason: 'refusal', parsed_output: null },
+      { stop_reason: 'end_turn', parsed_output: null },
+      { stop_reason: 'max_tokens', parsed_output: null }
+    ]) {
       const { client } = fakeClient(() => response);
-      await assert.rejects(new AnthropicCardScanner({ apiKey: FAKE_KEY, model: 'm', client }).read(image), CardUnreadableError);
+      await assert.rejects(
+        new AnthropicCardScanner({ apiKey: FAKE_KEY, model: 'm', client }).read(image),
+        CardUnreadableError
+      );
     }
   });
 
@@ -273,7 +302,9 @@ describe('AnthropicCardScanner (cliente simulado, sin llamar a la API)', () => {
         [new Anthropic.BadRequestError(400, {}, 'imagen inválida', new Headers()), CardUnreadableError]
       ];
       for (const [apiError, expected] of cases) {
-        const { client } = fakeClient(() => { throw apiError; });
+        const { client } = fakeClient(() => {
+          throw apiError;
+        });
         await assert.rejects(new AnthropicCardScanner({ apiKey: FAKE_KEY, model: 'm', client }).read(image), expected);
       }
     } finally {

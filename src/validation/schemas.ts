@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-export const emailSchema = z
+const emailSchema = z
   .string({ error: 'El correo es obligatorio.' })
   .trim()
   .toLowerCase()
   .pipe(z.email({ error: 'Ingresa un correo válido.' }).max(254, 'El correo es demasiado largo.'));
 
 // Límite superior para evitar hashear entradas enormes.
-export const newPasswordSchema = z
+const newPasswordSchema = z
   .string({ error: 'La contraseña es obligatoria.' })
   .min(8, 'La contraseña debe tener al menos 8 caracteres.')
   .max(128, 'La contraseña no puede superar 128 caracteres.');
@@ -16,11 +16,16 @@ export const newPasswordSchema = z
 export const registerSchema = z.object({
   email: emailSchema,
   password: newPasswordSchema,
-  acceptedTerms: z.literal(true, { error: 'Debes aceptar la política de tratamiento de datos personales para crear tu cuenta.' })
+  acceptedTerms: z.literal(true, {
+    error: 'Debes aceptar la política de tratamiento de datos personales para crear tu cuenta.'
+  })
 });
 
 export const deleteAccountSchema = z.object({
-  password: z.string({ error: 'Confirma tu contraseña para eliminar la cuenta.' }).min(1, 'Confirma tu contraseña para eliminar la cuenta.').max(128)
+  password: z
+    .string({ error: 'Confirma tu contraseña para eliminar la cuenta.' })
+    .min(1, 'Confirma tu contraseña para eliminar la cuenta.')
+    .max(128)
 });
 
 export const loginSchema = z.object({
@@ -30,7 +35,11 @@ export const loginSchema = z.object({
 
 export const forgotPasswordSchema = z.object({ email: emailSchema });
 
-const oneTimeTokenSchema = z.string({ error: 'El token es obligatorio.' }).trim().min(1, 'El token es obligatorio.').max(256);
+const oneTimeTokenSchema = z
+  .string({ error: 'El token es obligatorio.' })
+  .trim()
+  .min(1, 'El token es obligatorio.')
+  .max(256);
 
 export const resetPasswordSchema = z.object({
   token: oneTimeTokenSchema,

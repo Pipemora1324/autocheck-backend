@@ -41,7 +41,10 @@ export class AnthropicCardScanner implements CardScanner {
           {
             role: 'user',
             content: [
-              { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data.toString('base64') } },
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: image.mediaType, data: image.data.toString('base64') }
+              },
               { type: 'text', text: 'Extrae los datos de esta licencia de tránsito.' }
             ]
           }

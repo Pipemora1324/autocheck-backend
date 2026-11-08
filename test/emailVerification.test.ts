@@ -2,14 +2,20 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { RESEND_VERIFICATION_MESSAGE } from '../src/controllers/authController.js';
 import { EMAIL_NOT_VERIFIED } from '../src/middleware/auth.js';
-import { hashOneTimeToken, INVALID_VERIFICATION_TOKEN, VERIFICATION_TOKEN_TTL_MS } from '../src/services/authService.js';
+import {
+  hashOneTimeToken,
+  INVALID_VERIFICATION_TOKEN,
+  VERIFICATION_TOKEN_TTL_MS
+} from '../src/services/authService.js';
 import { startTestApp, type TestContext } from './support/testApp.js';
 
 const flushMail = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('Verificación de correo', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp(); });
+  before(async () => {
+    ctx = await startTestApp();
+  });
   after(() => ctx.close());
 
   const verify = (token: string) => ctx.request('POST', '/auth/verify-email', { body: { token } });
@@ -129,7 +135,9 @@ describe('Verificación de correo', () => {
 
 describe('Rate limit de verificación', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp({ rateLimits: { resendVerificationEmailMax: 2, verifyEmailMax: 2 } }); });
+  before(async () => {
+    ctx = await startTestApp({ rateLimits: { resendVerificationEmailMax: 2, verifyEmailMax: 2 } });
+  });
   after(() => ctx.close());
 
   it('limita el reenvío por correo y los intentos de verificación', async () => {

@@ -6,14 +6,20 @@ import { DEFAULT_CLAVE, startTestApp, type TestContext } from './support/testApp
 
 describe('Consentimiento de tratamiento de datos', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp(); });
+  before(async () => {
+    ctx = await startTestApp();
+  });
   after(() => ctx.close());
 
   const registerWith = (body: Record<string, unknown>) => ctx.request('POST', '/auth/register', { body });
 
   it('exige acceptedTerms: true para registrarse', async () => {
     for (const acceptedTerms of [undefined, false, 'true', 1]) {
-      const response = await registerWith({ email: 'sin-consentimiento@example.com', password: DEFAULT_CLAVE, acceptedTerms });
+      const response = await registerWith({
+        email: 'sin-consentimiento@example.com',
+        password: DEFAULT_CLAVE,
+        acceptedTerms
+      });
       assert.equal(response.status, 400, `acceptedTerms=${String(acceptedTerms)}`);
       assert.equal(response.body.errors[0].field, 'acceptedTerms');
     }
@@ -36,7 +42,9 @@ describe('Consentimiento de tratamiento de datos', () => {
 
 describe('DELETE /auth/me', () => {
   let ctx: TestContext;
-  before(async () => { ctx = await startTestApp(); });
+  before(async () => {
+    ctx = await startTestApp();
+  });
   after(() => ctx.close());
 
   it('exige la contraseña actual y responde 403 (no 401) si es incorrecta', async () => {
@@ -65,7 +73,11 @@ describe('DELETE /auth/me', () => {
     const user = (await ctx.users.findByEmail('borrar@example.com'))!;
     assert.ok(ctx.refreshTokens.activeCount(user.id) > 0);
 
-    const response = await ctx.request('DELETE', '/auth/me', { token: login.body.accessToken, cookie: login.cookie, body: { password: DEFAULT_CLAVE } });
+    const response = await ctx.request('DELETE', '/auth/me', {
+      token: login.body.accessToken,
+      cookie: login.cookie,
+      body: { password: DEFAULT_CLAVE }
+    });
     assert.equal(response.status, 204);
     assert.match(response.headers.getSetCookie().join(';'), /autocheck_refresh=;/);
 

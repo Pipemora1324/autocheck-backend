@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { badRequest, conflict, forbidden, unauthorized } from '../errors/httpError.js';
+import { badRequest, conflict, errorMessage, forbidden, unauthorized } from '../errors/httpError.js';
 import type {
   EmailVerificationTokenRepository,
   PasswordResetTokenRepository,
@@ -10,7 +10,12 @@ import type {
 import type { Mailer } from './mailer.js';
 import type { PasswordHasher } from './passwordHasher.js';
 import { PRIVACY_POLICY_VERSION } from './privacyPolicy.js';
-import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS, type AuthUser, type TokenService } from './tokenService.js';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  REFRESH_TOKEN_TTL_SECONDS,
+  type AuthUser,
+  type TokenService
+} from './tokenService.js';
 
 export const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 export const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -18,7 +23,7 @@ export const INVALID_CREDENTIALS = 'Credenciales inválidas.';
 export const INVALID_RESET_TOKEN = 'El enlace de recuperación no es válido o ya expiró.';
 export const INVALID_VERIFICATION_TOKEN = 'El enlace de verificación no es válido o ya expiró. Solicita uno nuevo.';
 export const WRONG_PASSWORD_CODE = 'INVALID_PASSWORD';
-export const INVALID_SESSION = 'La sesión no es válida o expiró. Inicia sesión de nuevo.';
+const INVALID_SESSION = 'La sesión no es válida o expiró. Inicia sesión de nuevo.';
 
 /** Usuario tal como se entrega al cliente (el access token solo lleva id, email y rol). */
 export interface PublicUser extends AuthUser {
@@ -45,16 +50,20 @@ export interface AuthServiceDeps {
   /** ADMIN_EMAILS: reciben rol admin solo cuando su correo ya está verificado. */
   adminEmails?: string[];
   now?: () => Date;
+  /** Limpieza externa al borrar la cuenta (caché, sockets). Si falla, la cuenta ya quedó borrada. */
+  onAccountDeleted?: (userId: string) => Promise<void>;
 }
 
 /** sha256 de un token de un solo uso: en la base nunca se guarda el token en claro. */
-export const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex');
-export const hashOneTimeToken = hashResetToken;
+export const hashOneTimeToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 const newOneTimeToken = () => randomBytes(32).toString('base64url');
 
 const toAuthUser = (user: UserRecord): AuthUser => ({ id: user.id, email: user.email, role: user.role });
-const toPublicUser = (user: UserRecord): PublicUser => ({ ...toAuthUser(user), emailVerified: user.emailVerifiedAt !== null });
+const toPublicUser = (user: UserRecord): PublicUser => ({
+  ...toAuthUser(user),
+  emailVerified: user.emailVerifiedAt !== null
+});
 
 export class AuthService {
   private readonly now: () => Date;
@@ -127,10 +136,17 @@ export class AuthService {
     if (claims) await this.deps.refreshTokens.revokeFamily(claims.familyId, this.now());
   }
 
-  async me(userId: string): Promise<PublicUser & { createdAt: string; termsAcceptedAt: string | null; termsVersion: string | null }> {
+  async me(
+    userId: string
+  ): Promise<PublicUser & { createdAt: string; termsAcceptedAt: string | null; termsVersion: string | null }> {
     const user = await this.deps.users.findById(userId);
     if (!user) throw unauthorized();
-    return { ...toPublicUser(user), createdAt: user.createdAt, termsAcceptedAt: user.termsAcceptedAt, termsVersion: user.termsVersion };
+    return {
+      ...toPublicUser(user),
+      createdAt: user.createdAt,
+      termsAcceptedAt: user.termsAcceptedAt,
+      termsVersion: user.termsVersion
+    };
   }
 
   /**
@@ -146,6 +162,9 @@ export class AuthService {
     }
     await this.deps.refreshTokens.revokeAllForUser(userId, this.now());
     await this.deps.users.delete(userId);
+    await this.deps.onAccountDeleted?.(userId).catch((error: unknown) => {
+      console.error('No se pudo terminar la limpieza de la cuenta borrada:', errorMessage(error));
+    });
   }
 
   /** No revela si el correo existe: el controlador responde lo mismo en ambos casos. */
@@ -155,18 +174,18 @@ export class AuthService {
 
     const token = newOneTimeToken();
     const expiresAt = new Date(this.now().getTime() + RESET_TOKEN_TTL_MS);
-    await this.deps.resetTokens.create(user.id, hashResetToken(token), expiresAt);
+    await this.deps.resetTokens.create(user.id, hashOneTimeToken(token), expiresAt);
 
     const resetUrl = `${this.deps.appUrl}/reset-password?token=${encodeURIComponent(token)}`;
     // Sin await: el tiempo de respuesta no depende del envío del correo.
-    this.deps.mailer.sendPasswordReset(user.email, resetUrl).catch((error: Error) => {
-      console.error('No se pudo enviar el correo de restablecimiento:', error.message);
+    this.deps.mailer.sendPasswordReset(user.email, resetUrl).catch((error: unknown) => {
+      console.error('No se pudo enviar el correo de restablecimiento:', errorMessage(error));
     });
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
     const now = this.now();
-    const userId = await this.deps.resetTokens.consume(hashResetToken(token), now);
+    const userId = await this.deps.resetTokens.consume(hashOneTimeToken(token), now);
     if (!userId) throw badRequest(INVALID_RESET_TOKEN);
 
     await this.deps.users.updatePassword(userId, await this.deps.hasher.hash(newPassword));
@@ -205,8 +224,8 @@ export class AuthService {
 
     const verifyUrl = `${this.deps.appUrl}/verify-email?token=${encodeURIComponent(token)}`;
     // Sin await: ni el registro ni el reenvío dependen de que el proveedor de correo responda.
-    this.deps.mailer.sendEmailVerification(user.email, verifyUrl).catch((error: Error) => {
-      console.error('No se pudo enviar el correo de verificación:', error.message);
+    this.deps.mailer.sendEmailVerification(user.email, verifyUrl).catch((error: unknown) => {
+      console.error('No se pudo enviar el correo de verificación:', errorMessage(error));
     });
   }
 

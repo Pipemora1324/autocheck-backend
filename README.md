@@ -119,6 +119,7 @@ Las variables se validan al arrancar con zod; si falta o es inválida alguna, el
 | `npm run format` / `format:check` | Prettier                                   |
 | `npm run eval:telltales` | Lee tus fotos con Gemini real y muestra los testigos |
 | `npm run smoke:gemini` | Lista los modelos de tu clave y prueba cuáles responden |
+| `npm run seed:demo`    | Crea o actualiza la cuenta de demostración (ver abajo) |
 
 Las pruebas usan repositorios en memoria, y Gemini simulado: no necesitan base de datos ni llaman a APIs externas. Para correr también las de integración contra Postgres, define `TEST_DATABASE_URL` con una base desechable cuyo nombre contenga `test`; su esquema se borra en cada corrida. Con `TEST_REDIS_URL` corren además las de Redis real; sin ella, solo las de Redis caído, que usan un puerto cerrado.
 
@@ -135,6 +136,44 @@ Muestra, por archivo, el resultado y la urgencia general y, por testigo, nombre,
 Espera 7 segundos entre llamadas para respetar el plan gratuito (`EVAL_DELAY_MS` lo cambia) y, si Gemini responde 429, espera un minuto y reintenta una vez. **Gasta el cupo diario de Gemini, y las fotos van a Google:** usa solo imágenes que puedas compartir. Nunca imprime la clave.
 
 Si los diagnósticos fallan, `npm run smoke:gemini` muestra qué modelos responden con tu clave y qué cupo se agotó. También acepta modelos concretos: `npm run smoke:gemini -- gemini-3.5-flash-lite`.
+
+## Cuenta de demostración
+
+`npm run seed:demo` crea una cuenta con el correo ya verificado, la política de datos vigente aceptada y rol `user`, con un garaje de **15 vehículos ficticios** (carros, camionetas y una moto; gasolina, diésel, gas, híbridos y eléctricos), **31 diagnósticos** de los últimos 90 días y **8 conversaciones** con el chat. Las placas son de la serie `DEM` (`DEM-101` a `DEM-114` y la moto `DEM-20M`) y no se guarda ningún chasis. Los datos están en `scripts/demoData.ts`.
+
+No llama a Gemini ni usa imágenes. Los diagnósticos se crean con el `DiagnosisService` real y un identificador guionado, así pasan por el mismo piso de seguridad y se guardan en el mismo formato que los de la aplicación; las respuestas del chat, escritas a mano, pasan por el `DiagnosisChatService` real, que les agrega el recordatorio de detenerse y el aviso fijo. Por eso el check engine parpadeando y la batería/alternador quedan en rojo con la orden de detenerse, como en producción.
+
+Variables de entorno (nunca las escribas en el repositorio ni en `.env.example`):
+
+| Variable             | Uso                                                                               |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | Base donde se siembra. Tiene prioridad sobre la de `.env`                          |
+| `DEMO_USER_EMAIL`    | Correo de la cuenta demo. No puede estar en `ADMIN_EMAILS` ni ser de una cuenta admin |
+| `DEMO_USER_PASSWORD` | Contraseña: misma política del registro, se guarda con el mismo argon2id           |
+| `REDIS_URL`          | Opcional: si está, borra la caché de listas de la cuenta demo                       |
+
+```powershell
+# PowerShell: define las variables solo en esta terminal
+$env:DATABASE_URL = Read-Host 'DATABASE_URL'
+$env:DEMO_USER_EMAIL = Read-Host 'Correo demo'
+$env:DEMO_USER_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host 'Contraseña demo' -AsSecureString)).Password
+
+npm run seed:demo              # muestra el host y revisa las migraciones, sin escribir
+npm run seed:demo -- --yes     # crea o actualiza la cuenta y reemplaza sus vehículos DEM
+npm run seed:demo -- --reset --yes   # borra la cuenta (sesiones incluidas) y la vuelve a crear
+npm run seed:demo -- --remove --yes  # elimina la cuenta y todo lo suyo
+
+Remove-Item Env:DEMO_USER_PASSWORD, Env:DEMO_USER_EMAIL, Env:DATABASE_URL
+```
+
+Garantías:
+
+- Antes de escribir imprime solo el **nombre del host** de la base y exige `--yes`. Nunca imprime la URL, el correo, la contraseña ni su hash; al final muestra solo conteos.
+- Verifica que las migraciones aplicadas en la base sean exactamente las de `migrations/`; si no coinciden, aborta sin escribir.
+- Todo ocurre en **una transacción**: si algo falla, la base queda como estaba. Solo toca la cuenta del `DEMO_USER_EMAIL`; nunca modifica una cuenta admin.
+- Es idempotente: sin `--reset` conserva la misma cuenta y lo que se haya agregado durante la demo, y solo reemplaza los vehículos `DEM` con sus diagnósticos y chats.
+
+Las pruebas (`test/seedDemo*.test.ts`) usan valores falsos y, con `TEST_DATABASE_URL`, una base propia `<nombre>_seed_demo` que se crea y se borra en cada corrida.
 
 ## Endpoints
 
